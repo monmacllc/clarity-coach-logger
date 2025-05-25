@@ -16,7 +16,10 @@ client = OpenAI(api_key=openai_api_key)
 
 # --- GOOGLE SHEETS SETUP ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("stunning-symbol-460901-t5-dffe5313c225.json", scope)
+import io
+service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
+creds = ServiceAccountCredentials.from_json_keyfile_name(io.StringIO(service_key_json), scope)
+
 gs_client = gspread.authorize(creds)
 sheet = gs_client.open("Clarity Capture Log").sheet1
 rows = sheet.get_all_records()

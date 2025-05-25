@@ -93,6 +93,11 @@ with tabs[1]:
     df = df[df['Category'].isin(selected_categories)]
 
     show_completed = st.sidebar.checkbox("Show Completed Items", value=False)
+    debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
+
+    if debug_mode:
+        st.subheader("📋 All Rows (Before Filtering)")
+        st.dataframe(pd.DataFrame(rows))
 
     if show_completed:
         filtered_df = df[df['Status'] == 'Complete']
@@ -131,17 +136,20 @@ with tabs[1]:
 
     if st.button("🧠 Summarize Insights"):
         if not filtered_df.empty:
-            insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in filtered_df.iterrows()]
-            prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            st.markdown("### 🧠 Clarity Summary")
-            st.write(response.choices[0].message.content)
+            insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in filtered_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
+            if insight_texts:
+                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
+                response = client.chat.completions.create(
+                    model="gpt-4.1-mini",
+                    messages=[
+                        {"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                st.markdown("### 🧠 Clarity Summary")
+                st.write(response.choices[0].message.content)
+            else:
+                st.info("No valid insights to summarize.")
         else:
             st.info("No insights available to summarize. Try adjusting filters.")
 

@@ -96,12 +96,15 @@ with tabs[1]:
 
     if show_completed:
         filtered_df = df[df['Status'] == 'Complete']
-        if not filtered_df.empty:
+        try:
             min_date = filtered_df['Timestamp'].min().date()
-            max_date = filtered_df['Timestamp'].max().date()
-        else:
+        except:
             min_date = date.today()
+        try:
+            max_date = filtered_df['Timestamp'].max().date()
+        except:
             max_date = date.today()
+
         selected_category = st.sidebar.selectbox("Filter by Category", ["All"] + sorted(filtered_df['Category'].unique().tolist()))
         if selected_category != "All":
             filtered_df = filtered_df[filtered_df['Category'] == selected_category]

@@ -82,14 +82,18 @@ with tabs[1]:
         insights = []
         filtered_rows = []
 
+        st.subheader("📋 All Rows (Debug Mode)")
         for r in rows:
+            st.write(r)
             ts = r.get('Timestamp')
             try:
                 if ts:
                     if isinstance(ts, int):
-                        ts_dt = datetime.utcfromtimestamp(ts)
+                        ts_dt = datetime.utcfromtimestamp(ts).replace(tzinfo=timezone.utc)
                     else:
                         ts_dt = dtparser(str(ts))
+                        if ts_dt.tzinfo is None:
+                            ts_dt = ts_dt.replace(tzinfo=timezone.utc)
 
                     raw_cat = r['Category'].lower().strip()
                     category_map = {
@@ -101,12 +105,13 @@ with tabs[1]:
                         "family relationships - extended family": "family"
                     }
                     cat = category_map.get(raw_cat, raw_cat)
+                    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
 
                     if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
                         insights.append(f"- {r['Insight']} ({ts_dt.date()})")
                         filtered_rows.append(r)
-            except Exception:
-                continue
+            except Exception as e:
+                st.warning(f"⚠️ Failed to parse row: {e}")
 
         if not insights:
             st.info("No entries found for those filters.")

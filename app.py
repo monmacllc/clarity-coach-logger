@@ -79,11 +79,13 @@ with tabs[1]:
         cutoff = datetime.utcnow() - timedelta(days=days)
         insights = []
         for r in rows:
+            st.write(r)  # debug print of each row
             ts = r.get('Timestamp')
             try:
                 if ts:
                     ts_dt = datetime.utcfromtimestamp(int(ts)) if isinstance(ts, int) else datetime.fromisoformat(ts)
-                    if r['Category'].lower() in selected_categories and ts_dt > cutoff:
+                    cat = r['Category'].lower().strip()
+                    if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
                         insights.append(f"- {r['Insight']} ({ts_dt.date()})")
             except:
                 continue
@@ -119,7 +121,6 @@ with tabs[2]:
         reply = response.choices[0].message.content
         st.chat_message("assistant").write(reply)
 
-        # attempt JSON parse for dump logging
         try:
             entries = json.loads(reply)
             log_status = []

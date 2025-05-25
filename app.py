@@ -93,11 +93,19 @@ with tabs[1]:
                     else:
                         ts_dt = dtparser(str(ts))
 
-                    cat = r['Category'].lower().strip()
-                    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
-                    if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
-                        insights.append(f"- {r['Insight']} ({ts_dt.date()})")
-                        filtered_rows.append(r)
+                    # Normalize category names
+                    raw_cat = r['Category'].lower().strip()
+                    category_map = {
+                        "ccv (main business)": "ccv",
+                        "traditional real estate": "traditional real estate",
+                        "co-living": "co living",
+                        "family relationships - wife": "wife",
+                        "family relationships - kids": "kids",
+                        "family relationships - extended family": "family",
+                        # Add more custom mappings as needed
+                    }
+                    cat = category_map.get(raw_cat, raw_cat)
+
             except Exception as e:
                 st.warning(f"⚠️ Failed to parse row: {e}")
 

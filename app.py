@@ -72,13 +72,18 @@ Return a list of objects.
 # --- RECALL TAB ---
 with tabs[1]:
     st.title("🔍 Recall Insights")
-    category_options = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors", "communication", "testing", "performance review", "appointments", "task", "project management", "travel planning", "morning routine", "preparation"]
+    category_options = sorted(list(set([r['Category'] for r in rows if r.get('Category')])))
     selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
     days = st.slider("Days to look back", 1, 90, 7)
 
     df = pd.DataFrame(rows)
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    df = df[df['Timestamp'] > cutoff]
+
+    df = df[df['Category'].isin(selected_categories)]
 
     show_completed = st.sidebar.checkbox("Show Completed Items", value=False)
 
@@ -96,19 +101,22 @@ with tabs[1]:
     else:
         filtered_df = df[df['Status'] != 'Complete']
 
-    for i, row in filtered_df.iterrows():
-        insight = row['Insight']
-        ts = row['Timestamp']
-        checkbox = st.checkbox(f"{insight} ({ts.date()})", key=f"check_{i}")
-        if checkbox and row['Status'] != 'Complete':
-            sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
-            st.success("Marked as complete")
+    grouped = filtered_df.groupby('Category')
+    for category, group in grouped:
+        st.subheader(category.upper())
+        for i, row in group.iterrows():
+            insight = row['Insight']
+            ts = row['Timestamp']
+            checkbox = st.checkbox(f"{insight} ({ts.date()})", key=f"check_{i}")
+            if checkbox and row['Status'] != 'Complete':
+                sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
+                st.success("Marked as complete")
 
     # --- KPI Section ---
     st.markdown("---")
     st.header("📈 Completion Metrics")
 
-    df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time)
+    df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
     completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
     fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
     st.plotly_chart(fig1, use_container_width=True)

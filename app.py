@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from dateutil.parser import parse as dtparser
 from openai import OpenAI
 import os
@@ -36,16 +36,21 @@ with tabs[0]:
 
     user_input = st.text_area("Clarity Input", height=200)
 
+    category_options = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors", "communication", "testing", "performance review", "appointments", "task", "project management", "travel planning", "morning routine", "preparation"]
+    approved_categories = ", ".join(category_options)
+
     if st.button("🚀 Log Insights"):
         with st.spinner("Thinking like Clarity Coach..."):
-            system_prompt = """
-You are Clarity Coach. Parse brain dumps into structured JSON entries. For each bullet point, return:
+            system_prompt = f"""
+You are Clarity Coach. Parse brain dumps into structured JSON entries. Each entry must use one of the following categories: {approved_categories}.
+- If the text matches multiple categories, choose the most precise match.
+- If it doesn't clearly fit, assign to 'other'.
+Return a list of objects with:
 - timestamp (ISO format)
 - category
 - insight
 - action_step (optional)
 - source = Clarity Coach
-Return a list of objects.
 """
             response = client.chat.completions.create(
                 model="gpt-4.1-mini",
@@ -59,6 +64,9 @@ Return a list of objects.
                 data = json.loads(content)
                 log_status = []
                 for entry in data:
+                    # Validate category
+                    if entry['category'].lower() not in [c.lower() for c in category_options]:
+                        entry['category'] = 'other'
                     entry['timestamp'] = datetime.utcnow().isoformat()
                     r = requests.post(webhook_url, json=entry)
                     log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code}")
@@ -72,7 +80,6 @@ Return a list of objects.
 # --- RECALL TAB ---
 with tabs[1]:
     st.title("🔍 Recall Insights")
-    category_options = sorted(list(set([r['Category'] for r in rows if r.get('Category')])))
     selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
     days = st.slider("Days to look back", 1, 90, 7)
 
@@ -80,9 +87,11 @@ with tabs[1]:
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
 
+    # Enforce allowed categories only
+    df = df[df['Category'].isin(category_options)]
+
     cutoff = datetime.utcnow() - timedelta(days=days)
     df = df[df['Timestamp'] > cutoff]
-
     df = df[df['Category'].isin(selected_categories)]
 
     show_completed = st.sidebar.checkbox("Show Completed Items", value=False)

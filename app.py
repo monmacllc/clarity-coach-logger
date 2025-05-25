@@ -70,48 +70,26 @@ Return a list of objects.
 # --- RECALL TAB ---
 with tabs[1]:
     st.title("🔍 Recall Insights")
-    category_options = [
-        "ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit",
-        "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors"
-    ]
+    category_options = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors", "communication", "testing", "performance review", "appointments", "task", "project management", "travel planning", "morning routine", "preparation"]
     selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
     days = st.slider("Days to look back", 1, 90, 7)
 
     if st.button("🧠 Summarize Insights"):
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         insights = []
-        filtered_rows = []
 
-        st.subheader("📋 All Rows (Debug Mode)")
         for r in rows:
-            st.write(r)
             ts = r.get('Timestamp')
             try:
                 if ts:
-                    if isinstance(ts, int):
-                        ts_dt = datetime.utcfromtimestamp(ts).replace(tzinfo=timezone.utc)
-                    else:
-                        ts_dt = dtparser(str(ts))
-                        if ts_dt.tzinfo is None:
-                            ts_dt = ts_dt.replace(tzinfo=timezone.utc)
-
-                    raw_cat = r['Category'].lower().strip()
-                    category_map = {
-                        "ccv (main business)": "ccv",
-                        "traditional real estate": "traditional real estate",
-                        "co-living": "co living",
-                        "family relationships - wife": "wife",
-                        "family relationships - kids": "kids",
-                        "family relationships - extended family": "family"
-                    }
-                    cat = category_map.get(raw_cat, raw_cat)
-                    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
-
+                    ts_dt = dtparser(str(ts))
+                    if ts_dt.tzinfo is None:
+                        ts_dt = ts_dt.replace(tzinfo=timezone.utc)
+                    cat = r['Category'].lower().strip().replace("(main business)", "").replace("family relationships -", "").strip()
                     if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
-                        insights.append(f"- {r['Insight']} ({ts_dt.date()})")
-                        filtered_rows.append(r)
-            except Exception as e:
-                st.warning(f"⚠️ Failed to parse row: {e}")
+                        insights.append(f"- {r['Insight']} ({ts_dt.strftime('%m/%d/%y %I:%M%p').lower()})")
+            except Exception:
+                continue
 
         if not insights:
             st.info("No entries found for those filters.")

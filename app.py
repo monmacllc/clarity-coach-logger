@@ -77,7 +77,8 @@ with tabs[1]:
     days = st.slider("Days to look back", 1, 90, 7)
 
     df = pd.DataFrame(rows)
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    df = df.dropna(subset=['Timestamp'])
 
     show_completed = st.sidebar.checkbox("Show Completed Items", value=False)
 

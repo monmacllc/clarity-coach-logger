@@ -84,7 +84,7 @@ if st.button("🧠 Summarize Insights"):
         ts = r.get('Timestamp')
         try:
             if ts:
-                ts_dt = dtparser(ts) # ✅ Correct
+                ts_dt = ts_dt = dtparser(str(ts)) # ✅ Correct
                 cat = r['Category'].lower().strip()
                 st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
                 if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:

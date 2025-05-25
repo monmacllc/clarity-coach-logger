@@ -78,8 +78,9 @@ with tabs[1]:
     if st.button("🧠 Summarize Insights"):
         cutoff = datetime.utcnow() - timedelta(days=days)
         insights = []
+        filtered_rows = []  # Store matched rows for debug
+
         for r in rows:
-            st.write(r)  # debug print of each row
             ts = r.get('Timestamp')
             try:
                 if ts:
@@ -87,8 +88,12 @@ with tabs[1]:
                     cat = r['Category'].lower().strip()
                     if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
                         insights.append(f"- {r['Insight']} ({ts_dt.date()})")
+                        filtered_rows.append(r)
             except:
                 continue
+
+        st.subheader("🔎 Matched Rows")
+        st.write(filtered_rows)
 
         if not insights:
             st.info("No entries found for those filters.")

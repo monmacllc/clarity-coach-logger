@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import json
 from datetime import datetime, timedelta
+from dateutil.parser import parse as dtparser
 from openai import OpenAI
 import os
 import gspread

@@ -105,7 +105,7 @@ with tabs[1]:
                     if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
                         insights.append(f"- {r['Insight']} ({ts_dt.date()})")
                         filtered_rows.append(r)
-            except Exception as e:
+            except Exception:
                 continue
 
         if not insights:

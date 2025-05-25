@@ -19,14 +19,13 @@ client = OpenAI(api_key=openai_api_key)
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
 creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
-
 gs_client = gspread.authorize(creds)
 sheet = gs_client.open("Clarity Capture Log").sheet1
 rows = sheet.get_all_records()
 
 # --- STREAMLIT UI ---
 st.set_page_config(page_title="Clarity Coach Logger", layout="centered")
-tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights"])
+tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
 
 # --- LOG TAB ---
 with tabs[0]:
@@ -102,3 +101,32 @@ with tabs[1]:
             )
             st.success("🧠 Clarity Summary:")
             st.write(response.choices[0].message.content)
+
+# --- CHAT TAB ---
+with tabs[2]:
+    st.title("💬 Clarity Chat")
+    chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
+    if chat_input:
+        st.chat_message("user").write(chat_input)
+        system_prompt = "You are Clarity Coach. Decide whether the input is a brain dump to log or a recall request. If it's a dump, return a JSON list of insights with timestamp, category, insight, action_step (optional), and source = Clarity Coach. If it's a recall request, summarize past entries. Use ONLY available data."
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_input}
+            ]
+        )
+        reply = response.choices[0].message.content
+        st.chat_message("assistant").write(reply)
+
+        # attempt JSON parse for dump logging
+        try:
+            entries = json.loads(reply)
+            log_status = []
+            for entry in entries:
+                entry['timestamp'] = datetime.utcnow().isoformat()
+                r = requests.post(webhook_url, json=entry)
+                log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code}")
+            st.success("Auto-logged all entries.")
+        except:
+            pass

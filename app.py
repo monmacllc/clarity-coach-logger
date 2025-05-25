@@ -83,10 +83,10 @@ if st.button("🧠 Summarize Insights"):
         st.write(r)
         ts = r.get('Timestamp')
         try:
-if ts:
-    ts_dt = dtparser(ts)  # ✅ Correct usage
-    cat = r['Category'].lower().strip()
-    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
+    if ts:
+        ts_dt = dtparser(ts)  # ✅ Correct usage
+        cat = r['Category'].lower().strip()
+        st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
     if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
         insights.append(f"- {r['Insight']} ({ts_dt.date()})")
         filtered_rows.append(r)

@@ -32,6 +32,13 @@ try:
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
     gs_client = gspread.authorize(creds)
     sheet = gs_client.open("Clarity Capture Log").sheet1
+    # Test Google Sheets access directly
+try:
+    test_values = sheet.get_all_values()
+    st.success(f"✅ Successfully accessed Google Sheet. First row: {test_values[0]}")
+except Exception as e:
+    st.error("❌ Google Sheets access test failed.")
+    st.exception(e)
     rows_raw = sheet.get_all_values()
     header = rows_raw[0]
     data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in rows_raw[1:] if any(row)]

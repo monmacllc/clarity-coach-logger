@@ -62,18 +62,17 @@ if openai_ok and sheet_ok:
                     input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
                     submitted = st.form_submit_button(f"Log {category} Insight")
                     if submitted and input_text.strip():
-                        entry = {
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "category": category,
-                            "insight": input_text.strip(),
-                            "action_step": "",
-                            "source": "Clarity Coach"
-                        }
-                        r = requests.post(webhook_url, json=entry)
-                        if r.status_code == 200:
-                            st.success(f"✅ Logged under {category}")
-                        else:
-                            st.error(f"Failed to log insight for {category}. Status: {r.status_code}")
+                        lines = [line.strip() for line in input_text.strip().splitlines() if line.strip()]
+                        for line in lines:
+                            entry = {
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "category": category,
+                                "insight": line,
+                                "action_step": "",
+                                "source": "Clarity Coach"
+                            }
+                            r = requests.post(webhook_url, json=entry)
+                        st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
 
     # --- RECALL TAB ---
     with tabs[1]:

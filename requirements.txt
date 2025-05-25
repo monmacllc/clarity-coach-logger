@@ -1,3 +1,5 @@
 streamlit
 openai
 requests
+gspread
+oauth2client

@@ -11,7 +11,7 @@ import plotly.express as px
 import pandas as pd
 
 # --- SETUP ---
-st.set_page_config(page_title="Clarity Coach Logger", layout="centered")
+st.set_page_config(page_title="Clarity Coach", layout="centered")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 
@@ -55,7 +55,7 @@ if openai_ok and sheet_ok:
 
     # --- LOG TAB ---
     with tabs[0]:
-        st.title("🧠 Clarity Coach Logger")
+        st.title("🧠 Clarity Coach")
         st.write("Enter your insights directly by category. Each form below logs to your sheet.")
 
         categories = [

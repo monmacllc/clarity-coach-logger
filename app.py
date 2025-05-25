@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from dateutil.parser import parse as dtparser
 from openai import OpenAI
 import os
@@ -96,13 +96,18 @@ with tabs[1]:
 
     if show_completed:
         filtered_df = df[df['Status'] == 'Complete']
-        categories = filtered_df['Category'].unique().tolist()
-        selected_category = st.sidebar.selectbox("Filter by Category", ["All"] + categories)
+        if not filtered_df.empty:
+            min_date = filtered_df['Timestamp'].min().date()
+            max_date = filtered_df['Timestamp'].max().date()
+        else:
+            min_date = date.today()
+            max_date = date.today()
+        selected_category = st.sidebar.selectbox("Filter by Category", ["All"] + sorted(filtered_df['Category'].unique().tolist()))
         if selected_category != "All":
             filtered_df = filtered_df[filtered_df['Category'] == selected_category]
 
-        start_date = st.sidebar.date_input("Start Date", value=filtered_df['Timestamp'].min().date())
-        end_date = st.sidebar.date_input("End Date", value=filtered_df['Timestamp'].max().date())
+        start_date = st.sidebar.date_input("Start Date", value=min_date)
+        end_date = st.sidebar.date_input("End Date", value=max_date)
         mask = (filtered_df['Timestamp'].dt.date >= start_date) & (filtered_df['Timestamp'].dt.date <= end_date)
         filtered_df = filtered_df[mask]
     else:
@@ -120,8 +125,8 @@ with tabs[1]:
                 st.success("Marked as complete")
 
     if st.button("🧠 Summarize Insights"):
-        insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in filtered_df.iterrows()]
-        if insight_texts:
+        if not filtered_df.empty:
+            insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in filtered_df.iterrows()]
             prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
             response = client.chat.completions.create(
                 model="gpt-4.1-mini",
@@ -133,7 +138,7 @@ with tabs[1]:
             st.markdown("### 🧠 Clarity Summary")
             st.write(response.choices[0].message.content)
         else:
-            st.info("No insights available to summarize.")
+            st.info("No insights available to summarize. Try adjusting filters.")
 
     # --- KPI Section ---
     st.markdown("---")

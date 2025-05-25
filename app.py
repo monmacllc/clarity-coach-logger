@@ -84,12 +84,13 @@ if st.button("🧠 Summarize Insights"):
         ts = r.get('Timestamp')
         try:
             if ts:
-                ts_dt = dtparser.parse(ts)
-                cat = r['Category'].lower().strip()
-                st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
-                if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
-                    insights.append(f"- {r['Insight']} ({ts_dt.date()})")
-                    filtered_rows.append(r)
+    ts_dt = dtparser(ts)  # ✅ Correct usage
+    cat = r['Category'].lower().strip()
+    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
+    if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
+        insights.append(f"- {r['Insight']} ({ts_dt.date()})")
+        filtered_rows.append(r)
+
         except Exception as e:
             st.warning(f"⚠️ Failed to parse row: {e}")
 

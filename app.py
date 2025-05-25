@@ -68,6 +68,7 @@ Return a list of objects.
                 st.exception(e)
 
 # --- RECALL TAB ---
+# --- RECALL TAB ---
 with tabs[1]:
     st.title("🔍 Recall Clarity Insights")
 
@@ -78,19 +79,22 @@ with tabs[1]:
     if st.button("🧠 Summarize Insights"):
         cutoff = datetime.utcnow() - timedelta(days=days)
         insights = []
-        filtered_rows = []  # Store matched rows for debug
+        filtered_rows = []
 
+        st.subheader("📋 All Rows (Before Filtering)")
         for r in rows:
+            st.write(r)  # Print raw row
             ts = r.get('Timestamp')
             try:
                 if ts:
                     ts_dt = datetime.utcfromtimestamp(int(ts)) if isinstance(ts, int) else datetime.fromisoformat(ts)
                     cat = r['Category'].lower().strip()
+                    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
                     if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
                         insights.append(f"- {r['Insight']} ({ts_dt.date()})")
                         filtered_rows.append(r)
-            except:
-                continue
+            except Exception as e:
+                st.warning(f"⚠️ Failed to parse row: {e}")
 
         st.subheader("🔎 Matched Rows")
         st.write(filtered_rows)
@@ -108,6 +112,7 @@ with tabs[1]:
             )
             st.success("🧠 Clarity Summary:")
             st.write(response.choices[0].message.content)
+
 
 # --- CHAT TAB ---
 with tabs[2]:

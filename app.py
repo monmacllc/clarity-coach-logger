@@ -62,7 +62,7 @@ if openai_ok and sheet_ok:
                     input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
                     submitted = st.form_submit_button(f"Log {category} Insight")
                     if submitted and input_text.strip():
-                        lines = [line.strip() for line in input_text.strip().splitlines() if line.strip()]
+                        lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
                         for line in lines:
                             entry = {
                                 "timestamp": datetime.utcnow().isoformat(),

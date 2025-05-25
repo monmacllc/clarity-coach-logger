@@ -160,27 +160,26 @@ if openai_ok and sheet_ok:
     # --- CHAT TAB ---
     with tabs[2]:
         st.title("💬 Clarity Chat")
+
+        df = pd.DataFrame(data)
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df = df.dropna(subset=['Timestamp'])
+        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+        df['Insight'] = df['Insight'].astype(str)
+
+        recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
+        recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
+
         chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
-        if chat_input:
-            st.chat_message("user").write(chat_input)
-            system_prompt = "You are Clarity Coach. Decide whether the input is a brain dump to log or a recall request. If it's a dump, return a JSON list of insights with timestamp, category, insight, action_step (optional), and source = Clarity Coach. If it's a recall request, summarize past entries. Use ONLY available data."
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": chat_input}
-                ]
-            )
+        if chat_input or recent_insights:
+            st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
+            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_input or "\n".join(recent_insights)}
+            ]
+            response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
             reply = response.choices[0].message.content
             st.chat_message("assistant").write(reply)
-
-            try:
-                entries = json.loads(reply)
-                log_status = []
-                for entry in entries:
-                    entry['timestamp'] = datetime.utcnow().isoformat()
-                    r = requests.post(webhook_url, json=entry)
-                    log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code})")
-                st.success("Auto-logged all entries.")
-            except:
-                pass
+        else:
+            st.info("You haven't shared any recent brain dumps or insights yet for me to analyze and identify the top 80/20 priorities. Please provide your thoughts, tasks, or notes for today, and I can help determine the key focus areas.")

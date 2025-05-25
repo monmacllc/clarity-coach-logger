@@ -21,7 +21,11 @@ service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
 creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
 gs_client = gspread.authorize(creds)
 sheet = gs_client.open("Clarity Capture Log").sheet1
-rows = sheet.get_all_records()
+
+# Load and pad rows from Google Sheet
+rows_raw = sheet.get_all_values()
+header = rows_raw[0]
+data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in rows_raw[1:] if any(row)]
 
 # --- STREAMLIT UI ---
 st.set_page_config(page_title="Clarity Coach Logger", layout="centered")
@@ -59,9 +63,9 @@ Return a list of objects with:
             )
             content = response.choices[0].message.content
             try:
-                data = json.loads(content)
+                data_logged = json.loads(content)
                 log_status = []
-                for entry in data:
+                for entry in data_logged:
                     if entry['category'].lower() not in [c.lower() for c in category_options]:
                         entry['category'] = 'other'
                     entry['timestamp'] = datetime.utcnow().isoformat()
@@ -80,10 +84,11 @@ with tabs[1]:
     selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
     days = st.slider("Days to look back", 1, 90, 7)
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(data)
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
-    df = df[df['Category'].isin(category_options)]
+    df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
+    df['Category'] = df['Category'].astype(str).str.strip()
 
     cutoff = datetime.utcnow() - timedelta(days=days)
     df = df[df['Timestamp'] > cutoff]
@@ -94,7 +99,7 @@ with tabs[1]:
 
     if debug_mode:
         st.subheader("📋 All Rows (Before Filtering)")
-        st.dataframe(pd.DataFrame(rows))
+        st.dataframe(pd.DataFrame(data))
 
     if show_completed:
         filtered_df = df[df['Status'] == 'Complete']

@@ -13,7 +13,7 @@ import pandas as pd
 # --- SETUP ---
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 openai_api_key = os.getenv("OPENAI_API_KEY")
-webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
+webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
 
 # --- CHECK OPENAI ACCESS ---
 try:

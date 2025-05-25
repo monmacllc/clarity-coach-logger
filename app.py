@@ -102,7 +102,8 @@ Return a list of objects with:
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
         df = df.dropna(subset=['Timestamp'])
         df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
-        df['Category'] = df['Category'].astype(str).str.strip()
+        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+        selected_categories = [c.lower() for c in selected_categories]
 
         cutoff = datetime.utcnow() - timedelta(days=days)
         df = df[df['Timestamp'] > cutoff]
@@ -117,25 +118,6 @@ Return a list of objects with:
 
         if show_completed:
             filtered_df = df[df['Status'] == 'Complete']
-            try:
-                min_raw = filtered_df['Timestamp'].min()
-                min_date = min_raw.date() if pd.notnull(min_raw) else date.today()
-            except:
-                min_date = date.today()
-            try:
-                max_raw = filtered_df['Timestamp'].max()
-                max_date = max_raw.date() if pd.notnull(max_raw) else date.today()
-            except:
-                max_date = date.today()
-
-            selected_category = st.sidebar.selectbox("Filter by Category", ["All"] + sorted(filtered_df['Category'].unique().tolist()))
-            if selected_category != "All":
-                filtered_df = filtered_df[filtered_df['Category'] == selected_category]
-
-            start_date = st.sidebar.date_input("Start Date", value=min_date)
-            end_date = st.sidebar.date_input("End Date", value=max_date)
-            mask = (filtered_df['Timestamp'].dt.date >= start_date) & (filtered_df['Timestamp'].dt.date <= end_date)
-            filtered_df = filtered_df[mask]
         else:
             filtered_df = df[df['Status'] != 'Complete']
 
@@ -151,6 +133,7 @@ Return a list of objects with:
                     st.success("Marked as complete")
 
         if st.button("🧠 Summarize Insights"):
+            st.write("🔍 Filtered rows count:", len(filtered_df))
             if not filtered_df.empty:
                 if debug_mode:
                     st.subheader("📋 Filtered Data Before Summary")

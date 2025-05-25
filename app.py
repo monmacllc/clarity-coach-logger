@@ -74,7 +74,7 @@ selected_categories = st.multiselect("Select Categories", category_options, defa
 days = st.slider("Days to look back", 1, 90, 7)
 
 if st.button("🧠 Summarize Insights"):
-    from datetime import timezone
+    from datetime import datetime, timedelta, timezone
     cutoff = datetime.now(datetime.timezone.utc) - timedelta(days=days)
     insights = []
     filtered_rows = []

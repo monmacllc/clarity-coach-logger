@@ -14,10 +14,8 @@ import pandas as pd
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 
-# --- INIT GPT CLIENT ---
 client = OpenAI(api_key=openai_api_key)
 
-# --- GOOGLE SHEETS SETUP ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
 creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
@@ -85,7 +83,6 @@ with tabs[1]:
     df = pd.DataFrame(rows)
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
-
     df = df[df['Category'].isin(category_options)]
 
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -136,6 +133,9 @@ with tabs[1]:
 
     if st.button("🧠 Summarize Insights"):
         if not filtered_df.empty:
+            if debug_mode:
+                st.subheader("📋 Filtered Data Before Summary")
+                st.dataframe(filtered_df)
             insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in filtered_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
             if insight_texts:
                 prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
@@ -153,7 +153,7 @@ with tabs[1]:
         else:
             st.info("No insights available to summarize. Try adjusting filters.")
 
-    # --- KPI Section ---
+    # --- KPI SECTION ---
     st.markdown("---")
     st.header("📈 Completion Metrics")
 

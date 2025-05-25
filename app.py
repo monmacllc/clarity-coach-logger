@@ -82,9 +82,7 @@ with tabs[1]:
         insights = []
         filtered_rows = []
 
-        st.subheader("📋 All Rows (Before Filtering)")
         for r in rows:
-            st.write(r)
             ts = r.get('Timestamp')
             try:
                 if ts:
@@ -93,7 +91,6 @@ with tabs[1]:
                     else:
                         ts_dt = dtparser(str(ts))
 
-                    # Normalize category names
                     raw_cat = r['Category'].lower().strip()
                     category_map = {
                         "ccv (main business)": "ccv",
@@ -101,16 +98,15 @@ with tabs[1]:
                         "co-living": "co living",
                         "family relationships - wife": "wife",
                         "family relationships - kids": "kids",
-                        "family relationships - extended family": "family",
-                        # Add more custom mappings as needed
+                        "family relationships - extended family": "family"
                     }
                     cat = category_map.get(raw_cat, raw_cat)
 
+                    if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
+                        insights.append(f"- {r['Insight']} ({ts_dt.date()})")
+                        filtered_rows.append(r)
             except Exception as e:
-                st.warning(f"⚠️ Failed to parse row: {e}")
-
-        st.subheader("🔎 Matched Rows")
-        st.write(filtered_rows)
+                continue
 
         if not insights:
             st.info("No entries found for those filters.")

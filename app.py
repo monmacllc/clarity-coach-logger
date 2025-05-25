@@ -1,9 +1,11 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from openai import OpenAI
 import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- SETUP ---
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -12,16 +14,27 @@ webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 # --- INIT GPT CLIENT ---
 client = OpenAI(api_key=openai_api_key)
 
+# --- GOOGLE SHEETS SETUP ---
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("stunning-symbol-460901-t5-dffe5313c225.json", scope)
+gs_client = gspread.authorize(creds)
+sheet = gs_client.open("Clarity Capture Log").sheet1
+rows = sheet.get_all_records()
+
 # --- STREAMLIT UI ---
 st.set_page_config(page_title="Clarity Coach Logger", layout="centered")
-st.title("🧠 Clarity Coach Logger")
-st.write("Paste your brain dump or clarity notes below. We'll auto-organize and log them.")
+tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights"])
 
-user_input = st.text_area("Clarity Input", height=200)
+# --- LOG TAB ---
+with tabs[0]:
+    st.title("🧠 Clarity Coach Logger")
+    st.write("Paste your brain dump or clarity notes below. We'll auto-organize and log them.")
 
-if st.button("🚀 Log Insights"):
-    with st.spinner("Thinking like Clarity Coach..."):
-        system_prompt = """
+    user_input = st.text_area("Clarity Input", height=200)
+
+    if st.button("🚀 Log Insights"):
+        with st.spinner("Thinking like Clarity Coach..."):
+            system_prompt = """
 You are Clarity Coach. Parse brain dumps into structured JSON entries. For each bullet point, return:
 - timestamp (ISO format)
 - category
@@ -30,26 +43,59 @@ You are Clarity Coach. Parse brain dumps into structured JSON entries. For each 
 - source = Clarity Coach
 Return a list of objects.
 """
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+            )
+            content = response.choices[0].message.content
+            try:
+                data = json.loads(content)
+                log_status = []
+                for entry in data:
+                    entry['timestamp'] = datetime.utcnow().isoformat()
+                    r = requests.post(webhook_url, json=entry)
+                    log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code}")
+                st.success("Entries logged successfully!")
+                st.write("\n".join(log_status))
+            except Exception as e:
+                st.error("Failed to parse GPT output or send to Make webhook.")
+                st.code(content)
+                st.exception(e)
 
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_input}
-            ]
-        )
+# --- RECALL TAB ---
+with tabs[1]:
+    st.title("🔍 Recall Clarity Insights")
 
-        content = response.choices[0].message.content
-        try:
-            data = json.loads(content)
-            log_status = []
-            for entry in data:
-                entry['timestamp'] = datetime.utcnow().isoformat()
-                r = requests.post(webhook_url, json=entry)
-                log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code}")
-            st.success("Entries logged successfully!")
-            st.write("\n".join(log_status))
-        except Exception as e:
-            st.error("Failed to parse GPT output or send to Make webhook.")
-            st.code(content)
-            st.exception(e)
+    category_options = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors"]
+    selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
+    days = st.slider("Days to look back", 1, 90, 7)
+
+    if st.button("🧠 Summarize Insights"):
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        insights = []
+        for r in rows:
+            ts = r.get('Timestamp')
+            try:
+                if ts:
+                    ts_dt = datetime.utcfromtimestamp(int(ts)) if isinstance(ts, int) else datetime.fromisoformat(ts)
+                    if r['Category'].lower() in selected_categories and ts_dt > cutoff:
+                        insights.append(f"- {r['Insight']} ({ts_dt.date()})")
+            except:
+                continue
+
+        if not insights:
+            st.info("No entries found for those filters.")
+        else:
+            prompt = f"Summarize these clarity insights from the last {days} days under categories {', '.join(selected_categories)}:\n\n" + "\n".join(insights)
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": "You are Clarity Coach. Return a structured, helpful summary."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            st.success("🧠 Clarity Summary:")
+            st.write(response.choices[0].message.content)

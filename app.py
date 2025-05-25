@@ -7,6 +7,8 @@ from openai import OpenAI
 import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import plotly.express as px
+import pandas as pd
 
 # --- SETUP ---
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -74,36 +76,49 @@ with tabs[1]:
     selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
     days = st.slider("Days to look back", 1, 90, 7)
 
-    if st.button("🧠 Summarize Insights"):
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        insights = []
+    df = pd.DataFrame(rows)
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
 
-        for r in rows:
-            ts = r.get('Timestamp')
-            try:
-                if ts:
-                    ts_dt = dtparser(str(ts))
-                    if ts_dt.tzinfo is None:
-                        ts_dt = ts_dt.replace(tzinfo=timezone.utc)
-                    cat = r['Category'].lower().strip().replace("(main business)", "").replace("family relationships -", "").strip()
-                    if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
-                        insights.append(f"- {r['Insight']} ({ts_dt.strftime('%m/%d/%y %I:%M%p').lower()})")
-            except Exception:
-                continue
+    show_completed = st.sidebar.checkbox("Show Completed Items", value=False)
 
-        if not insights:
-            st.info("No entries found for those filters.")
-        else:
-            prompt = f"Summarize these clarity insights from the last {days} days under categories {', '.join(selected_categories)}:\n\n" + "\n".join(insights)
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {"role": "system", "content": "You are Clarity Coach. Return a structured, helpful summary."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            st.success("🧠 Clarity Summary:")
-            st.write(response.choices[0].message.content)
+    if show_completed:
+        filtered_df = df[df['Status'] == 'Complete']
+        categories = filtered_df['Category'].unique().tolist()
+        selected_category = st.sidebar.selectbox("Filter by Category", ["All"] + categories)
+        if selected_category != "All":
+            filtered_df = filtered_df[filtered_df['Category'] == selected_category]
+
+        start_date = st.sidebar.date_input("Start Date", value=filtered_df['Timestamp'].min().date())
+        end_date = st.sidebar.date_input("End Date", value=filtered_df['Timestamp'].max().date())
+        mask = (filtered_df['Timestamp'].dt.date >= start_date) & (filtered_df['Timestamp'].dt.date <= end_date)
+        filtered_df = filtered_df[mask]
+    else:
+        filtered_df = df[df['Status'] != 'Complete']
+
+    for i, row in filtered_df.iterrows():
+        insight = row['Insight']
+        ts = row['Timestamp']
+        checkbox = st.checkbox(f"{insight} ({ts.date()})", key=f"check_{i}")
+        if checkbox and row['Status'] != 'Complete':
+            sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
+            st.success("Marked as complete")
+
+    # --- KPI Section ---
+    st.markdown("---")
+    st.header("📈 Completion Metrics")
+
+    df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time)
+    completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
+    fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
+    st.plotly_chart(fig1, use_container_width=True)
+
+    category_summary = df[df['Status'] == 'Complete'].groupby('Category').size().reset_index(name='Completed')
+    fig2 = px.pie(category_summary, names='Category', values='Completed', title='Completed Insights by Category')
+    st.plotly_chart(fig2, use_container_width=True)
+
+    total = len(df)
+    completed = len(df[df['Status'] == 'Complete'])
+    st.metric("Completion Rate", f"{(completed / total * 100):.1f}%")
 
 # --- CHAT TAB ---
 with tabs[2]:

@@ -150,7 +150,10 @@ with tabs[1]:
 
     total = len(df)
     completed = len(df[df['Status'] == 'Complete'])
-    st.metric("Completion Rate", f"{(completed / total * 100):.1f}%")
+    if total > 0:
+        st.metric("Completion Rate", f"{(completed / total * 100):.1f}%")
+    else:
+        st.metric("Completion Rate", "0.0%")
 
 # --- CHAT TAB ---
 with tabs[2]:

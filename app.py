@@ -64,7 +64,6 @@ Return a list of objects with:
                 data = json.loads(content)
                 log_status = []
                 for entry in data:
-                    # Validate category
                     if entry['category'].lower() not in [c.lower() for c in category_options]:
                         entry['category'] = 'other'
                     entry['timestamp'] = datetime.utcnow().isoformat()
@@ -87,7 +86,6 @@ with tabs[1]:
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
 
-    # Enforce allowed categories only
     df = df[df['Category'].isin(category_options)]
 
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -120,6 +118,22 @@ with tabs[1]:
             if checkbox and row['Status'] != 'Complete':
                 sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                 st.success("Marked as complete")
+
+    if st.button("🧠 Summarize Insights"):
+        insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in filtered_df.iterrows()]
+        if insight_texts:
+            prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            st.markdown("### 🧠 Clarity Summary")
+            st.write(response.choices[0].message.content)
+        else:
+            st.info("No insights available to summarize.")
 
     # --- KPI Section ---
     st.markdown("---")

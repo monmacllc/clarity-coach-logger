@@ -1,13 +1,12 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.parser import parse as dtparser
 from openai import OpenAI
 import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import io
 
 # --- SETUP ---
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -69,53 +68,55 @@ Return a list of objects.
                 st.exception(e)
 
 # --- RECALL TAB ---
-category_options = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors"]
-selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
-days = st.slider("Days to look back", 1, 90, 7)
+with tabs[1]:
+    st.title("🔍 Recall Insights")
+    category_options = [
+        "ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit",
+        "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors"
+    ]
+    selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
+    days = st.slider("Days to look back", 1, 90, 7)
 
-if st.button("🧠 Summarize Insights"):
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    cutoff = datetime.now(datetime.timezone.utc) - timedelta(days=days)
-    insights = []
-    filtered_rows = []
+    if st.button("🧠 Summarize Insights"):
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        insights = []
+        filtered_rows = []
 
-    st.subheader("📋 All Rows (Before Filtering)")
-    for r in rows:
-        st.write(r)
-        ts = r.get('Timestamp')
-        try:
-            if ts:
-                if isinstance(ts, int):  # Handle raw Unix timestamps
-                    ts_dt = datetime.utcfromtimestamp(ts)
-                else:
-                    ts_dt = dtparser(str(ts))  # ISO or other string formats
-                    
-                cat = r['Category'].lower().strip()
-                st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
-                if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
-                    insights.append(f"- {r['Insight']} ({ts_dt.date()})")
-                    filtered_rows.append(r)
+        st.subheader("📋 All Rows (Before Filtering)")
+        for r in rows:
+            st.write(r)
+            ts = r.get('Timestamp')
+            try:
+                if ts:
+                    if isinstance(ts, int):
+                        ts_dt = datetime.utcfromtimestamp(ts)
+                    else:
+                        ts_dt = dtparser(str(ts))
 
-        except Exception as e:
-            st.warning(f"⚠️ Failed to parse row: {e}")
+                    cat = r['Category'].lower().strip()
+                    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
+                    if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
+                        insights.append(f"- {r['Insight']} ({ts_dt.date()})")
+                        filtered_rows.append(r)
+            except Exception as e:
+                st.warning(f"⚠️ Failed to parse row: {e}")
 
-    st.subheader("🔎 Matched Rows")
-    st.write(filtered_rows)
+        st.subheader("🔎 Matched Rows")
+        st.write(filtered_rows)
 
-    if not insights:
-        st.info("No entries found for those filters.")
-    else:
-        prompt = f"Summarize these clarity insights from the last {days} days under categories {', '.join(selected_categories)}:\n\n" + "\n".join(insights)
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": "You are Clarity Coach. Return a structured, helpful summary."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        st.success("🧠 Clarity Summary:")
-        st.write(response.choices[0].message.content)
-
+        if not insights:
+            st.info("No entries found for those filters.")
+        else:
+            prompt = f"Summarize these clarity insights from the last {days} days under categories {', '.join(selected_categories)}:\n\n" + "\n".join(insights)
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": "You are Clarity Coach. Return a structured, helpful summary."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            st.success("🧠 Clarity Summary:")
+            st.write(response.choices[0].message.content)
 
 # --- CHAT TAB ---
 with tabs[2]:

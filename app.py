@@ -48,54 +48,32 @@ if openai_ok and sheet_ok:
     # --- LOG TAB ---
     with tabs[0]:
         st.title("🧠 Clarity Coach Logger")
-        st.write("Paste your brain dump or clarity notes below. We'll auto-organize and log them.")
+        st.write("Enter your insights directly by category. Each input below logs immediately to your sheet.")
 
-        user_input = st.text_area("Clarity Input", height=200)
+        categories = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors", "communication", "testing", "performance review", "appointments", "task", "project management", "travel planning", "morning routine", "preparation"]
 
-        category_options = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors", "communication", "testing", "performance review", "appointments", "task", "project management", "travel planning", "morning routine", "preparation"]
-        approved_categories = ", ".join(category_options)
-
-        if st.button("🚀 Log Insights"):
-            with st.spinner("Thinking like Clarity Coach..."):
-                system_prompt = f"""
-You are Clarity Coach. Parse brain dumps into structured JSON entries. Each entry must use one of the following categories: {approved_categories}.
-- If the text matches multiple categories, choose the most precise match.
-- If it doesn't clearly fit, assign to 'other'.
-Return a list of objects with:
-- timestamp (ISO format)
-- category
-- insight
-- action_step (optional)
-- source = Clarity Coach
-"""
-                response = client.chat.completions.create(
-                    model="gpt-4.1-mini",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_input}
-                    ]
-                )
-                content = response.choices[0].message.content
-                try:
-                    data_logged = json.loads(content)
-                    log_status = []
-                    for entry in data_logged:
-                        if entry['category'].lower() not in [c.lower() for c in category_options]:
-                            entry['category'] = 'other'
-                        entry['timestamp'] = datetime.utcnow().isoformat()
+        for category in categories:
+            with st.expander(category.upper()):
+                input_text = st.text_area(f"Log insight for {category}", key=f"input_{category}", height=100)
+                if st.button(f"Log {category} Insight", key=f"log_{category}"):
+                    if input_text.strip():
+                        entry = {
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "category": category,
+                            "insight": input_text.strip(),
+                            "action_step": "",
+                            "source": "Clarity Coach"
+                        }
                         r = requests.post(webhook_url, json=entry)
-                        log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code}")
-                    st.success("Entries logged successfully!")
-                    st.write("\n".join(log_status))
-                except Exception as e:
-                    st.error("Failed to parse GPT output or send to Make webhook.")
-                    st.code(content)
-                    st.exception(e)
+                        if r.status_code == 200:
+                            st.success(f"✅ Logged under {category}")
+                        else:
+                            st.error(f"Failed to log insight for {category}. Status: {r.status_code}")
 
     # --- RECALL TAB ---
     with tabs[1]:
         st.title("🔍 Recall Insights")
-        selected_categories = st.multiselect("Select Categories", category_options, default=category_options[:3])
+        selected_categories = st.multiselect("Select Categories", categories, default=categories[:3])
         days = st.slider("Days to look back", 1, 90, 7)
 
         df = pd.DataFrame(data)
@@ -198,7 +176,7 @@ Return a list of objects with:
                 for entry in entries:
                     entry['timestamp'] = datetime.utcnow().isoformat()
                     r = requests.post(webhook_url, json=entry)
-                    log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code}")
+                    log_status.append(f"✅ {entry['category']}: {entry['insight']} | Status: {r.status_code})")
                 st.success("Auto-logged all entries.")
             except:
                 pass

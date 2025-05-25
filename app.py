@@ -97,11 +97,13 @@ with tabs[1]:
     if show_completed:
         filtered_df = df[df['Status'] == 'Complete']
         try:
-            min_date = filtered_df['Timestamp'].min().date()
+            min_raw = filtered_df['Timestamp'].min()
+            min_date = min_raw.date() if pd.notnull(min_raw) else date.today()
         except:
             min_date = date.today()
         try:
-            max_date = filtered_df['Timestamp'].max().date()
+            max_raw = filtered_df['Timestamp'].max()
+            max_date = max_raw.date() if pd.notnull(max_raw) else date.today()
         except:
             max_date = date.today()
 

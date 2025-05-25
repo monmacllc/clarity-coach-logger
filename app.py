@@ -80,7 +80,7 @@ with tabs[1]:
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.utcnow() - timedelta(days=days)
     df = df[df['Timestamp'] > cutoff]
 
     df = df[df['Category'].isin(selected_categories)]

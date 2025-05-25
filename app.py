@@ -79,7 +79,14 @@ if openai_ok and sheet_ok:
                                 "action_step": "",
                                 "source": "Clarity Coach"
                             }
-                            r = requests.post(webhook_url, json=entry)
+
+                            # Send to Google Sheets (existing webhook)
+                            requests.post(webhook_url, json=entry)
+
+                            # Send to Google Calendar (new Make.com webhook)
+                            calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
+                            requests.post(calendar_webhook_url, json=entry)
+
                         st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
 
     # --- RECALL TAB ---

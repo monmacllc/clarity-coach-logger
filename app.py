@@ -87,9 +87,10 @@ if st.button("🧠 Summarize Insights"):
                 if isinstance(ts, int):  # Handle raw Unix timestamps
                     ts_dt = datetime.utcfromtimestamp(ts)
                 else:
-                    ts_dt = dtparser(str(ts))  # ISO or stringified timestamp
-                    cat = r['Category'].lower().strip()
-                    st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
+                    ts_dt = dtparser(str(ts))  # ISO or other string formats
+                    
+                cat = r['Category'].lower().strip()
+                st.write(f"Parsed Timestamp: {ts_dt}, Parsed Category: {cat}")
                 if any(cat.startswith(sel.lower()) for sel in selected_categories) and ts_dt > cutoff:
                     insights.append(f"- {r['Insight']} ({ts_dt.date()})")
                     filtered_rows.append(r)

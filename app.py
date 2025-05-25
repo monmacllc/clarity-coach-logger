@@ -48,15 +48,20 @@ if openai_ok and sheet_ok:
     # --- LOG TAB ---
     with tabs[0]:
         st.title("🧠 Clarity Coach Logger")
-        st.write("Enter your insights directly by category. Each input below logs immediately to your sheet.")
+        st.write("Enter your insights directly by category. Each form below logs to your sheet.")
 
-        categories = ["ccv", "traditional real estate", "co living", "finances", "body", "mind", "spirit", "family", "kids", "wife", "relationships", "quality of life", "fun", "giving back", "stressors", "communication", "testing", "performance review", "appointments", "task", "project management", "travel planning", "morning routine", "preparation"]
+        categories = [
+            "ccv", "traditional real estate", "stressors", "co living", "finances",
+            "body mind spirit", "wife", "kids", "family", "quality of life",
+            "fun", "giving back", "misc"
+        ]
 
         for category in categories:
             with st.expander(category.upper()):
-                input_text = st.text_area(f"Log insight for {category}", key=f"input_{category}", height=100)
-                if st.button(f"Log {category} Insight", key=f"log_{category}"):
-                    if input_text.strip():
+                with st.form(key=f"form_{category}"):
+                    input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
+                    submitted = st.form_submit_button(f"Log {category} Insight")
+                    if submitted and input_text.strip():
                         entry = {
                             "timestamp": datetime.utcnow().isoformat(),
                             "category": category,

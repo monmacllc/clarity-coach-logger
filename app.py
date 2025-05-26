@@ -1,10 +1,10 @@
-# ClarityCoach-FinalBase
-
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta, date, time as dtime
+from datetime import datetime, timedelta
 from dateutil.parser import parse as dtparser
+import dateparser
+import dateparser.search
 from openai import OpenAI
 import os
 import gspread
@@ -12,12 +12,29 @@ from oauth2client.service_account import ServiceAccountCredentials
 import plotly.express as px
 import pandas as pd
 import re
-import calendar
 
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
+
+# Helper: Natural language datetime extraction
+def extract_event_info(text):
+    matches = dateparser.search.search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
+    if matches:
+        start = matches[0][1]
+        time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)
+        if time_range:
+            try:
+                start_hour = int(time_range.group(1))
+                end_hour = int(time_range.group(2))
+                end = start.replace(hour=end_hour)
+            except:
+                end = start + timedelta(hours=1)
+        else:
+            end = start + timedelta(hours=1)
+        return start.isoformat(), end.isoformat(), None
+    return None, None, None
 
 try:
     client = OpenAI(api_key=openai_api_key)
@@ -25,7 +42,7 @@ try:
     openai_ok = True
 except Exception as e:
     openai_ok = False
-    st.error("❌ Failed to connect to OpenAI. Check your API key or billing status.")
+    st.error("\u274c Failed to connect to OpenAI. Check your API key or billing status.")
     st.exception(e)
 
 try:
@@ -49,16 +66,14 @@ try:
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
-    st.error("❌ Failed to connect to Google Sheet.")
+    st.error("\u274c Failed to connect to Google Sheet.")
     st.exception(e)
 
-# INSERT 3 FULL TABS INCLUDING RECALL + CHAT (from last working version)
-
 if openai_ok and sheet_ok:
-    tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
+    tabs = st.tabs(["\ud83d\ude80 Log Clarity", "\ud83d\udd0d Recall Insights", "\ud83d\udcac Clarity Chat"])
 
     with tabs[0]:
-        st.title("🧠 Clarity Coach")
+        st.title("\ud83e\udde0 Clarity Coach")
         categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
         for category in categories:
             with st.expander(category.upper()):
@@ -76,18 +91,26 @@ if openai_ok and sheet_ok:
                             if recurrence: cal_payload["recurrence"] = recurrence
                             try: requests.post(calendar_webhook_url, json=cal_payload)
                             except: pass
-                        st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
+                        st.success(f"\u2705 Logged {len(lines)} insight(s) under {category}")
 
     with tabs[1]:
-        st.title("🔍 Recall Insights")
-        selected_categories = st.multiselect("Select Categories", sorted(df['Category'].unique()), default=sorted(df['Category'].unique()))
+        st.title("\ud83d\udd0d Recall Insights")
+
+        standard_categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
+        select_all = st.checkbox("Select All Categories", value=True)
+        selected_categories = st.multiselect(
+            "Select Categories",
+            options=standard_categories,
+            default=standard_categories if select_all else []
+        )
+
         days = st.slider("Days to look back", 1, 90, 30)
         recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
         show_completed = st.sidebar.checkbox("Show Completed Items", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
         if debug_mode:
-            st.subheader("📋 Raw Data")
+            st.subheader("\ud83d\udccb Raw Data")
             st.dataframe(df)
         if not show_completed:
             recall_df = recall_df[recall_df['Status'] != 'Complete']
@@ -99,16 +122,16 @@ if openai_ok and sheet_ok:
                     sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
 
-        if st.button("🧠 Summarize Insights"):
+        if st.button("\ud83e\udde0 Summarize Insights"):
             if not recall_df.empty:
                 insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
                 prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insights)
                 response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "system", "content": "You are Clarity Coach."}, {"role": "user", "content": prompt}])
-                st.markdown("### 🧠 Clarity Summary")
+                st.markdown("### \ud83e\udde0 Clarity Summary")
                 st.write(response.choices[0].message.content)
 
         st.markdown("---")
-        st.header("📈 Completion Metrics")
+        st.header("\ud83d\udcc8 Completion Metrics")
         df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
         completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
         fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
@@ -121,7 +144,7 @@ if openai_ok and sheet_ok:
         st.metric("Completion Rate", f"{(completed / total * 100):.1f}%" if total > 0 else "0.0%")
 
     with tabs[2]:
-        st.title("💬 Clarity Chat")
+        st.title("\ud83d\udcac Clarity Chat")
         recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
         recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
         chat_input = st.chat_input("Type your clarity dump, summary request, or question...")

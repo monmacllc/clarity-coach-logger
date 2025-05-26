@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time as dtime
 from dateutil.parser import parse as dtparser
 from openai import OpenAI
 import os
@@ -9,12 +9,13 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import plotly.express as px
 import pandas as pd
+import re
 
 # --- SETUP ---
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 openai_api_key = os.getenv("OPENAI_API_KEY")
-webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"  # Google Sheets webhook
-calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"  # Google Calendar webhook
+webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
+calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
 
 # --- CHECK OPENAI ACCESS ---
 try:
@@ -60,10 +61,31 @@ except Exception as e:
 # --- TIME PARSER ---
 def extract_event_time(insight, fallback_time=None):
     try:
-        fallback = fallback_time or datetime.utcnow()
-        dt = dtparser(insight, fuzzy=True, default=fallback)
+        match = re.search(r'(\d{1,2})([:\.]?\d{0,2})?\s*(-|to)\s*(\d{1,2})([:\.]?\d{0,2})?', insight, re.IGNORECASE)
+        base = fallback_time or datetime.utcnow()
+        if match:
+            start_hr = int(match.group(1))
+            end_hr = int(match.group(4))
+            start_min = int(match.group(2)[1:]) if match.group(2) else 0
+            end_min = int(match.group(5)[1:]) if match.group(5) else 0
+
+            def infer_meridiem(hour):
+                if hour >= 7 and hour <= 11:
+                    return hour  # Assume AM
+                elif hour >= 1 and hour <= 6:
+                    return hour + 12  # Assume PM
+                else:
+                    return hour
+
+            start_hour = infer_meridiem(start_hr)
+            start_dt = datetime.combine(base.date(), dtime(start_hour, start_min))
+            if start_dt < datetime.utcnow():
+                start_dt += timedelta(days=1)
+            return start_dt.isoformat()
+
+        dt = dtparser(insight, fuzzy=True, default=base)
         if dt < datetime.utcnow():
-            return fallback.isoformat()
+            dt += timedelta(days=1)
         return dt.isoformat()
     except:
         return (fallback_time or datetime.utcnow()).isoformat()
@@ -72,16 +94,9 @@ def extract_event_time(insight, fallback_time=None):
 if openai_ok and sheet_ok:
     tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
 
-    # --- LOG TAB ---
     with tabs[0]:
         st.title("🧠 Clarity Coach")
-        st.write("Enter your insights directly by category. Each form below logs to your sheet and calendar.")
-
-        categories = [
-            "ccv", "traditional real estate", "stressors", "co living", "finances",
-            "body mind spirit", "wife", "kids", "family", "quality of life",
-            "fun", "giving back", "misc"
-        ]
+        categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
 
         for category in categories:
             with st.expander(category.upper()):
@@ -93,37 +108,23 @@ if openai_ok and sheet_ok:
                         for line in lines:
                             parsed_time = extract_event_time(line)
                             timestamp = parsed_time if parsed_time else datetime.utcnow().isoformat()
-
-                            entry = {
-                                "timestamp": timestamp,
-                                "category": category,
-                                "insight": line,
-                                "action_step": "",
-                                "source": "Clarity Coach"
-                            }
-
+                            entry = {"timestamp": timestamp, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
                             try:
                                 requests.post(webhook_url, json=entry)
                             except Exception as e:
                                 st.warning(f"Failed to log to Google Sheet: {e}")
-
                             try:
                                 requests.post(calendar_webhook_url, json=entry)
                             except Exception as e:
                                 st.warning(f"Failed to log to Google Calendar: {e}")
-
                         st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
 
-    # --- RECALL TAB ---
     with tabs[1]:
         st.title("🔍 Recall Insights")
-
         selected_categories = st.multiselect("Select Categories", sorted(df['Category'].unique()), default=sorted(df['Category'].unique()))
         days = st.slider("Days to look back", 1, 90, 30)
-
         recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
-
         show_completed = st.sidebar.checkbox("Show Completed Items", value=True)
         debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 
@@ -151,10 +152,7 @@ if openai_ok and sheet_ok:
                 prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
                 response = client.chat.completions.create(
                     model="gpt-4.1-mini",
-                    messages=[
-                        {"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."},
-                        {"role": "user", "content": prompt}
-                    ]
+                    messages=[{"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."}, {"role": "user", "content": prompt}]
                 )
                 st.markdown("### 🧠 Clarity Summary")
                 st.write(response.choices[0].message.content)
@@ -163,16 +161,13 @@ if openai_ok and sheet_ok:
 
         st.markdown("---")
         st.header("📈 Completion Metrics")
-
         df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
         completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
         fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
         st.plotly_chart(fig1, use_container_width=True)
-
         category_summary = df[df['Status'] == 'Complete'].groupby('Category').size().reset_index(name='Completed')
         fig2 = px.pie(category_summary, names='Category', values='Completed', title='Completed Insights by Category')
         st.plotly_chart(fig2, use_container_width=True)
-
         total = len(df)
         completed = len(df[df['Status'] == 'Complete'])
         if total > 0:
@@ -180,21 +175,15 @@ if openai_ok and sheet_ok:
         else:
             st.metric("Completion Rate", "0.0%")
 
-    # --- CHAT TAB ---
     with tabs[2]:
         st.title("💬 Clarity Chat")
-
         recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
         recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
-
         chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
         if chat_input or recent_insights:
             st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
             system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": chat_input or "\n".join(recent_insights)}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": chat_input or "\n".join(recent_insights)}]
             response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
             reply = response.choices[0].message.content
             st.chat_message("assistant").write(reply)

@@ -141,6 +141,7 @@ if openai_ok and sheet_ok:
                                 st.warning(f"Failed to log to Google Sheet: {e}")
 
                             cal_payload = entry.copy()
+                            cal_payload["start"] = cal_payload.pop("timestamp")
                             if recurrence:
                                 cal_payload["recurrence"] = recurrence
                             try:

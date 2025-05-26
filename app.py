@@ -137,7 +137,7 @@ if openai_ok and sheet_ok:
                             except: pass
                             cal_payload = {"start": start, "end": end, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
                             if recurrence: cal_payload["recurrence"] = recurrence
-                            try: requests.post(calendar_webhook_url, json=cal_payload)
+                            try: requests.post(calendar_webhook_url, json={"start": start, "end": end, "summary": line, "category": category, "source": "Clarity Coach", "recurrence": recurrence} if recurrence else {"start": start, "end": end, "summary": line, "category": category, "source": "Clarity Coach"})
                             except: pass
                         st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
 

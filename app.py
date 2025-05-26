@@ -10,6 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import plotly.express as px
 import pandas as pd
 import re
+import calendar
 
 # --- SETUP ---
 st.set_page_config(page_title="Clarity Coach", layout="centered")
@@ -58,22 +59,38 @@ except Exception as e:
     st.error("❌ Failed to connect to Google Sheet. Make sure the sheet is shared with your service account.")
     st.exception(e)
 
-# --- TIME PARSER ---
+# --- SMART TIME PARSER ---
 def extract_event_time(insight, fallback_time=None):
     try:
-        match = re.search(r'(\d{1,2})([:\.]?\d{0,2})?\s*(-|to)\s*(\d{1,2})([:\.]?\d{0,2})?', insight, re.IGNORECASE)
         base = fallback_time or datetime.utcnow()
+        text = insight.lower()
+
+        # --- Handle "tmr" or "tomorrow" ---
+        if re.search(r"\btmr\b|\btomorrow\b", text):
+            base += timedelta(days=1)
+
+        # --- Handle weekdays and "next <weekday>" ---
+        weekdays = list(calendar.day_name)
+        for i, day in enumerate(weekdays):
+            if re.search(rf"\bnext {day.lower()}\b", text):
+                delta = (i - base.weekday() + 7) % 7 + 7
+                base += timedelta(days=delta)
+            elif re.search(rf"\b{day.lower()}\b", text):
+                delta = (i - base.weekday() + 7) % 7
+                if delta == 0:
+                    delta = 7
+                base += timedelta(days=delta)
+
+        match = re.search(r'(\d{1,2})([:\.]?\d{0,2})?\s*(-|to)?\s*(\d{1,2})?(?:[:\.]?(\d{0,2}))?', insight)
         if match:
             start_hr = int(match.group(1))
-            end_hr = int(match.group(4))
             start_min = int(match.group(2)[1:]) if match.group(2) else 0
-            end_min = int(match.group(5)[1:]) if match.group(5) else 0
 
             def infer_meridiem(hour):
                 if hour >= 7 and hour <= 11:
-                    return hour  # Assume AM
+                    return hour
                 elif hour >= 1 and hour <= 6:
-                    return hour + 12  # Assume PM
+                    return hour + 12
                 else:
                     return hour
 

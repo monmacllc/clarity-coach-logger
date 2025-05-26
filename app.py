@@ -40,6 +40,17 @@ try:
     rows_raw = test_values
     header = [h.strip() for h in rows_raw[0]]
     data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in rows_raw[1:] if any(row)]
+    df = pd.DataFrame(data)
+    df.columns = df.columns.str.strip()
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    df = df.dropna(subset=['Timestamp'])
+
+    if 'Status' not in df.columns:
+        df['Status'] = 'Incomplete'
+    else:
+        df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
+
+    df['Category'] = df['Category'].astype(str).str.lower().str.strip()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -106,24 +117,12 @@ if openai_ok and sheet_ok:
     # --- RECALL TAB ---
     with tabs[1]:
         st.title("🔍 Recall Insights")
-        df = pd.DataFrame(data)
-        df.columns = df.columns.str.strip()
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        df = df.dropna(subset=['Timestamp'])
-
-        if 'Status' not in df.columns:
-            df['Status'] = 'Incomplete'
-        else:
-            df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
-
-        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
 
         selected_categories = st.multiselect("Select Categories", sorted(df['Category'].unique()), default=sorted(df['Category'].unique()))
         days = st.slider("Days to look back", 1, 90, 30)
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        df = df[df['Timestamp'] > cutoff]
-        df = df[df['Category'].isin(selected_categories)]
+        recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
+        recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
 
         show_completed = st.sidebar.checkbox("Show Completed Items", value=True)
         debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
@@ -133,9 +132,9 @@ if openai_ok and sheet_ok:
             st.dataframe(df)
 
         if not show_completed:
-            df = df[df['Status'] != 'Complete']
+            recall_df = recall_df[recall_df['Status'] != 'Complete']
 
-        grouped = df.groupby('Category')
+        grouped = recall_df.groupby('Category')
         for category, group in grouped:
             st.subheader(category.upper())
             for i, row in group.iterrows():
@@ -147,8 +146,8 @@ if openai_ok and sheet_ok:
                     st.success("Marked as complete")
 
         if st.button("🧠 Summarize Insights"):
-            if not df.empty:
-                insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
+            if not recall_df.empty:
+                insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
                 prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
                 response = client.chat.completions.create(
                     model="gpt-4.1-mini",

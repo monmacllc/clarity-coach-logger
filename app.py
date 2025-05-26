@@ -1,3 +1,5 @@
+# ClarityCoach-FinalBase
+
 import streamlit as st
 import requests
 import json
@@ -49,6 +51,8 @@ except Exception as e:
     sheet_ok = False
     st.error("❌ Failed to connect to Google Sheet.")
     st.exception(e)
+
+# INSERT 3 FULL TABS INCLUDING RECALL + CHAT (from last working version)
 
 if openai_ok and sheet_ok:
     tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])

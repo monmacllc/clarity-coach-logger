@@ -70,7 +70,7 @@ except Exception as e:
     st.exception(e)
 
 if openai_ok and sheet_ok:
-    tabs = st.tabs(["\ud83d\ude80 Log Clarity", "\ud83d\udd0d Recall Insights", "\ud83d\udcac Clarity Chat"])
+    tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 
     with tabs[0]:
         st.title("\ud83e\udde0 Clarity Coach")

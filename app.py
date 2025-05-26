@@ -53,6 +53,14 @@ try:
     sheet = gs_client.open("Clarity Capture Log").sheet1
     test_values = sheet.get_all_values()
     header = [h.strip() for h in test_values[0]]
+
+    if 'Priority' not in header:
+        header.append('Priority')
+        sheet.resize(rows=len(test_values), cols=len(header))
+        sheet.update_cell(1, len(header), 'Priority')
+        for i in range(2, len(test_values) + 1):
+            sheet.update_cell(i, len(header), '')
+
     data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
@@ -65,6 +73,8 @@ try:
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
     if 'Priority' not in df.columns:
         df['Priority'] = ''
+    else:
+        df['Priority'] = df['Priority'].astype(str).str.strip()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -125,13 +135,20 @@ if openai_ok and sheet_ok:
                 with col1:
                     marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].date()})", key=f"check_{i}")
                 with col2:
-                    starred = st.checkbox("⭐", value=row.get('Priority', '').lower() == 'yes', key=f"star_{i}")
+                    is_starred = str(row.get('Priority', '')).strip().lower() == 'yes'
+                    starred = st.checkbox("⭐", value=is_starred, key=f"star_{i}")
                 if marked and row['Status'] != 'Complete':
                     sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
-                if starred != (row.get('Priority', '').lower() == 'yes'):
+                if starred != is_starred:
                     val = "Yes" if starred else ""
-                    sheet.update_cell(i + 2, df.columns.get_loc("Priority") + 1, val)
+                    row_num = i + 2
+                    col_num = df.columns.get_loc("Priority") + 1
+                    try:
+                        sheet.update_cell(row_num, col_num, val)
+                        st.info(f"Updated Priority at row {row_num}, column {col_num} to '{val}'")
+                    except Exception as e:
+                        st.warning(f"Failed to update Priority at row {row_num}, column {col_num}: {e}")
 
         if st.button("Summarize Insights"):
             if not recall_df.empty:

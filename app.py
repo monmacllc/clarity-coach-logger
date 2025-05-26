@@ -42,7 +42,7 @@ try:
     openai_ok = True
 except Exception as e:
     openai_ok = False
-    st.error("\u274c Failed to connect to OpenAI. Check your API key or billing status.")
+    st.error("Failed to connect to OpenAI. Check your API key or billing status.")
     st.exception(e)
 
 try:
@@ -66,14 +66,14 @@ try:
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
-    st.error("\u274c Failed to connect to Google Sheet.")
+    st.error("Failed to connect to Google Sheet.")
     st.exception(e)
 
 if openai_ok and sheet_ok:
     tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 
     with tabs[0]:
-        st.title("\ud83e\udde0 Clarity Coach")
+        st.title("Clarity Coach")
         categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
         for category in categories:
             with st.expander(category.upper()):
@@ -91,10 +91,10 @@ if openai_ok and sheet_ok:
                             if recurrence: cal_payload["recurrence"] = recurrence
                             try: requests.post(calendar_webhook_url, json=cal_payload)
                             except: pass
-                        st.success(f"\u2705 Logged {len(lines)} insight(s) under {category}")
+                        st.success(f"Logged {len(lines)} insight(s) under {category}")
 
     with tabs[1]:
-        st.title("\ud83d\udd0d Recall Insights")
+        st.title("Recall Insights")
 
         standard_categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
         select_all = st.checkbox("Select All Categories", value=True)
@@ -110,7 +110,7 @@ if openai_ok and sheet_ok:
         show_completed = st.sidebar.checkbox("Show Completed Items", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
         if debug_mode:
-            st.subheader("\ud83d\udccb Raw Data")
+            st.subheader("Raw Data")
             st.dataframe(df)
         if not show_completed:
             recall_df = recall_df[recall_df['Status'] != 'Complete']
@@ -122,16 +122,16 @@ if openai_ok and sheet_ok:
                     sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
 
-        if st.button("\ud83e\udde0 Summarize Insights"):
+        if st.button("Summarize Insights"):
             if not recall_df.empty:
                 insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
                 prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insights)
                 response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "system", "content": "You are Clarity Coach."}, {"role": "user", "content": prompt}])
-                st.markdown("### \ud83e\udde0 Clarity Summary")
+                st.markdown("### Clarity Summary")
                 st.write(response.choices[0].message.content)
 
         st.markdown("---")
-        st.header("\ud83d\udcc8 Completion Metrics")
+        st.header("Completion Metrics")
         df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
         completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
         fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
@@ -144,7 +144,7 @@ if openai_ok and sheet_ok:
         st.metric("Completion Rate", f"{(completed / total * 100):.1f}%" if total > 0 else "0.0%")
 
     with tabs[2]:
-        st.title("\ud83d\udcac Clarity Chat")
+        st.title("Clarity Chat")
         recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
         recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
         chat_input = st.chat_input("Type your clarity dump, summary request, or question...")

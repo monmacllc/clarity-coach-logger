@@ -46,12 +46,10 @@ try:
     df.columns = df.columns.str.strip()
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
-
     if 'Status' not in df.columns:
         df['Status'] = 'Incomplete'
     else:
         df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
-
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
     sheet_ok = True
 except Exception as e:
@@ -64,10 +62,8 @@ def extract_event_info(insight, fallback_time=None):
     try:
         base = fallback_time or datetime.utcnow()
         text = insight.lower()
-
         if re.search(r"\btmr\b|\btomorrow\b", text):
             base += timedelta(days=1)
-
         weekdays = list(calendar.day_name)
         for i, day in enumerate(weekdays):
             if re.search(rf"\bnext {day.lower()}\b", text):
@@ -78,12 +74,10 @@ def extract_event_info(insight, fallback_time=None):
                 if delta == 0:
                     delta = 7
                 base += timedelta(days=delta)
-
         match = re.search(r'(\d{1,2})([:\.]?\d{0,2})?\s*(-|to)?\s*(\d{1,2})?(?:[:\.]?(\d{0,2}))?', insight)
-        if match:
+        if match and match.group(1):
             start_hr = int(match.group(1))
             start_min = int(match.group(2)[1:]) if match.group(2) else 0
-
             def infer_meridiem(hour):
                 if hour >= 7 and hour <= 11:
                     return hour
@@ -91,16 +85,12 @@ def extract_event_info(insight, fallback_time=None):
                     return hour + 12
                 else:
                     return hour
-
             start_hour = infer_meridiem(start_hr)
             start_dt = datetime.combine(base.date(), dtime(start_hour, start_min))
-            if start_dt < datetime.utcnow():
-                start_dt += timedelta(days=1)
         else:
-            start_dt = dtparser(insight, fuzzy=True, default=base)
-            if start_dt < datetime.utcnow():
-                start_dt += timedelta(days=1)
-
+            start_dt = datetime.combine(base.date(), dtime(3, 0))
+        if start_dt < datetime.utcnow():
+            start_dt += timedelta(days=1)
         recurrence = None
         if "every day" in text or "each day" in text:
             recurrence = ["RRULE:FREQ=DAILY"]
@@ -110,20 +100,16 @@ def extract_event_info(insight, fallback_time=None):
             day_map = {"mon":"MO","tue":"TU","wed":"WE","thu":"TH","fri":"FR","sat":"SA","sun":"SU"}
             day_key = re.search(r"every (mon|tue|wed|thu|fri|sat|sun)", text).group(1)
             recurrence = [f"RRULE:FREQ=WEEKLY;BYDAY={day_map[day_key]}"]
-
         return start_dt.isoformat(), recurrence
-
-    except Exception as e:
+    except:
         return (fallback_time or datetime.utcnow()).isoformat(), None
 
-# --- STREAMLIT TABS ---
 if openai_ok and sheet_ok:
     tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
 
     with tabs[0]:
         st.title("🧠 Clarity Coach")
         categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
-
         for category in categories:
             with st.expander(category.upper()):
                 with st.form(key=f"form_{category}"):
@@ -134,21 +120,16 @@ if openai_ok and sheet_ok:
                         for line in lines:
                             timestamp, recurrence = extract_event_info(line)
                             entry = {"timestamp": timestamp, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
-
                             try:
                                 requests.post(webhook_url, json=entry)
-                            except Exception as e:
-                                st.warning(f"Failed to log to Google Sheet: {e}")
-
+                            except: pass
                             cal_payload = entry.copy()
                             cal_payload["start"] = cal_payload.pop("timestamp")
                             if recurrence:
                                 cal_payload["recurrence"] = recurrence
                             try:
                                 requests.post(calendar_webhook_url, json=cal_payload)
-                            except Exception as e:
-                                st.warning(f"Failed to log to Google Calendar: {e}")
-
+                            except: pass
                         st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
 
     with tabs[1]:
@@ -157,55 +138,27 @@ if openai_ok and sheet_ok:
         days = st.slider("Days to look back", 1, 90, 30)
         recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
-        show_completed = st.sidebar.checkbox("Show Completed Items", value=True)
-        debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
-
+        show_completed = st.sidebar.checkbox("Show Completed Items", True)
+        debug_mode = st.sidebar.checkbox("Debug Mode", False)
         if debug_mode:
-            st.subheader("📋 All Rows (Raw Data)")
+            st.subheader("📋 Raw Data")
             st.dataframe(df)
-
         if not show_completed:
             recall_df = recall_df[recall_df['Status'] != 'Complete']
-
         grouped = recall_df.groupby('Category')
         for category, group in grouped:
             st.subheader(category.upper())
             for i, row in group.iterrows():
-                insight = row['Insight']
-                ts = row['Timestamp']
-                checkbox = st.checkbox(f"{insight} ({ts.date()})", key=f"check_{i}")
-                if checkbox and row['Status'] != 'Complete':
+                if st.checkbox(f"{row['Insight']} ({row['Timestamp'].date()})", key=f"check_{i}") and row['Status'] != 'Complete':
                     sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
-
         if st.button("🧠 Summarize Insights"):
             if not recall_df.empty:
-                insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
-                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
-                response = client.chat.completions.create(
-                    model="gpt-4.1-mini",
-                    messages=[{"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."}, {"role": "user", "content": prompt}]
-                )
+                insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
+                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insights)
+                response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "system", "content": "You are Clarity Coach."}, {"role": "user", "content": prompt}])
                 st.markdown("### 🧠 Clarity Summary")
                 st.write(response.choices[0].message.content)
-            else:
-                st.info("No insights available to summarize. Try adjusting filters.")
-
-        st.markdown("---")
-        st.header("📈 Completion Metrics")
-        df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
-        completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
-        fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
-        st.plotly_chart(fig1, use_container_width=True)
-        category_summary = df[df['Status'] == 'Complete'].groupby('Category').size().reset_index(name='Completed')
-        fig2 = px.pie(category_summary, names='Category', values='Completed', title='Completed Insights by Category')
-        st.plotly_chart(fig2, use_container_width=True)
-        total = len(df)
-        completed = len(df[df['Status'] == 'Complete'])
-        if total > 0:
-            st.metric("Completion Rate", f"{(completed / total * 100):.1f}%")
-        else:
-            st.metric("Completion Rate", "0.0%")
 
     with tabs[2]:
         st.title("💬 Clarity Chat")

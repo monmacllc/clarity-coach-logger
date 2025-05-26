@@ -62,8 +62,10 @@ def extract_event_info(insight, fallback_time=None):
     try:
         base = fallback_time or datetime.utcnow()
         text = insight.lower()
+
         if re.search(r"\btmr\b|\btomorrow\b", text):
             base += timedelta(days=1)
+
         weekdays = list(calendar.day_name)
         for i, day in enumerate(weekdays):
             if re.search(rf"\bnext {day.lower()}\b", text):
@@ -74,23 +76,44 @@ def extract_event_info(insight, fallback_time=None):
                 if delta == 0:
                     delta = 7
                 base += timedelta(days=delta)
-        match = re.search(r'(\d{1,2})([:\.]?\d{0,2})?\s*(-|to)?\s*(\d{1,2})?(?:[:\.]?(\d{0,2}))?', insight)
-        if match and match.group(1):
-            start_hr = int(match.group(1))
-            start_min = int(match.group(2)[1:]) if match.group(2) else 0
-            def infer_meridiem(hour):
-                if hour >= 7 and hour <= 11:
-                    return hour
-                elif hour >= 1 and hour <= 6:
-                    return hour + 12
-                else:
-                    return hour
-            start_hour = infer_meridiem(start_hr)
-            start_dt = datetime.combine(base.date(), dtime(start_hour, start_min))
+
+        match = re.search(r'(\d{1,2})([:\.]?(\d{2}))?\s*(am|pm)?\s*(-|to)\s*(\d{1,2})([:\.]?(\d{2}))?\s*(am|pm)?', insight)
+        if match:
+            sh = int(match.group(1))
+            sm = int(match.group(3)) if match.group(3) else 0
+            eh = int(match.group(6))
+            em = int(match.group(8)) if match.group(8) else 0
+
+            def infer_meridiem(hour, ampm):
+                if ampm == "am": return hour if hour != 12 else 0
+                if ampm == "pm": return hour + 12 if hour < 12 else hour
+                return hour + 12 if hour < 7 else hour
+
+            start_hour = infer_meridiem(sh, match.group(4))
+            end_hour = infer_meridiem(eh, match.group(9))
+            start_dt = datetime.combine(base.date(), dtime(start_hour, sm))
+            end_dt = datetime.combine(base.date(), dtime(end_hour, em))
         else:
-            start_dt = datetime.combine(base.date(), dtime(3, 0))
+            match = re.search(r'(\d{1,2})([:\.]?(\d{2}))?\s*(am|pm)?', insight)
+            if match:
+                hour = int(match.group(1))
+                minute = int(match.group(3)) if match.group(3) else 0
+                ampm = match.group(4)
+                def infer(hour, ampm):
+                    if ampm == "am": return hour if hour != 12 else 0
+                    if ampm == "pm": return hour + 12 if hour < 12 else hour
+                    return hour + 12 if hour < 7 else hour
+                start_hour = infer(hour, ampm)
+                start_dt = datetime.combine(base.date(), dtime(start_hour, minute))
+                end_dt = start_dt + timedelta(hours=1)
+            else:
+                start_dt = datetime.combine(base.date(), dtime(3, 0))
+                end_dt = start_dt + timedelta(hours=1)
+
         if start_dt < datetime.utcnow():
             start_dt += timedelta(days=1)
+            end_dt += timedelta(days=1)
+
         recurrence = None
         if "every day" in text or "each day" in text:
             recurrence = ["RRULE:FREQ=DAILY"]
@@ -100,77 +123,9 @@ def extract_event_info(insight, fallback_time=None):
             day_map = {"mon":"MO","tue":"TU","wed":"WE","thu":"TH","fri":"FR","sat":"SA","sun":"SU"}
             day_key = re.search(r"every (mon|tue|wed|thu|fri|sat|sun)", text).group(1)
             recurrence = [f"RRULE:FREQ=WEEKLY;BYDAY={day_map[day_key]}"]
-        return start_dt.isoformat(), recurrence
-    except:
-        return (fallback_time or datetime.utcnow()).isoformat(), None
 
-if openai_ok and sheet_ok:
-    tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
+        return start_dt.isoformat(), end_dt.isoformat(), recurrence
 
-    with tabs[0]:
-        st.title("🧠 Clarity Coach")
-        categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
-        for category in categories:
-            with st.expander(category.upper()):
-                with st.form(key=f"form_{category}"):
-                    input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
-                    submitted = st.form_submit_button(f"Log {category} Insight")
-                    if submitted and input_text.strip():
-                        lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
-                        for line in lines:
-                            timestamp, recurrence = extract_event_info(line)
-                            entry = {"timestamp": timestamp, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
-                            try:
-                                requests.post(webhook_url, json=entry)
-                            except: pass
-                            cal_payload = entry.copy()
-                            cal_payload["start"] = cal_payload.pop("timestamp")
-                            if recurrence:
-                                cal_payload["recurrence"] = recurrence
-                            try:
-                                requests.post(calendar_webhook_url, json=cal_payload)
-                            except: pass
-                        st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
-
-    with tabs[1]:
-        st.title("🔍 Recall Insights")
-        selected_categories = st.multiselect("Select Categories", sorted(df['Category'].unique()), default=sorted(df['Category'].unique()))
-        days = st.slider("Days to look back", 1, 90, 30)
-        recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
-        recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
-        show_completed = st.sidebar.checkbox("Show Completed Items", True)
-        debug_mode = st.sidebar.checkbox("Debug Mode", False)
-        if debug_mode:
-            st.subheader("📋 Raw Data")
-            st.dataframe(df)
-        if not show_completed:
-            recall_df = recall_df[recall_df['Status'] != 'Complete']
-        grouped = recall_df.groupby('Category')
-        for category, group in grouped:
-            st.subheader(category.upper())
-            for i, row in group.iterrows():
-                if st.checkbox(f"{row['Insight']} ({row['Timestamp'].date()})", key=f"check_{i}") and row['Status'] != 'Complete':
-                    sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
-                    st.success("Marked as complete")
-        if st.button("🧠 Summarize Insights"):
-            if not recall_df.empty:
-                insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
-                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insights)
-                response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "system", "content": "You are Clarity Coach."}, {"role": "user", "content": prompt}])
-                st.markdown("### 🧠 Clarity Summary")
-                st.write(response.choices[0].message.content)
-
-    with tabs[2]:
-        st.title("💬 Clarity Chat")
-        recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
-        recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
-        chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
-        if chat_input or recent_insights:
-            st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
-            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": chat_input or "\n".join(recent_insights)}]
-            response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
-            reply = response.choices[0].message.content
-            st.chat_message("assistant").write(reply)
-        else:
-            st.info("You haven't shared any recent brain dumps or insights yet for me to analyze and identify the top 80/20 priorities. Please provide your thoughts, tasks, or notes for today, and I can help determine the key focus areas.")
+    except Exception as e:
+        fallback = fallback_time or datetime.utcnow()
+        return fallback.isoformat(), (fallback + timedelta(hours=1)).isoformat(), None

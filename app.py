@@ -61,56 +61,44 @@ def extract_event_time(insight, fallback_time=None):
 if openai_ok and sheet_ok:
     tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
 
-    # --- LOG TAB (unchanged for brevity) ---
+    # --- LOG TAB ---
+    with tabs[0]:
+        st.title("🧠 Clarity Coach")
+        st.write("Enter your insights directly by category. Each form below logs to your sheet and calendar.")
 
-    # --- RECALL TAB ---
-    with tabs[1]:
-        st.title("🔍 Recall Insights")
-        selected_categories = st.multiselect("Select Categories", [d.get("Category", "") for d in data], default=None)
-        days = st.slider("Days to look back", 1, 90, 30)
+        categories = [
+            "ccv", "traditional real estate", "stressors", "co living", "finances",
+            "body mind spirit", "wife", "kids", "family", "quality of life",
+            "fun", "giving back", "misc"
+        ]
 
-        df = pd.DataFrame(data)
-        df.columns = df.columns.str.strip()
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        df = df.dropna(subset=['Timestamp'])
+        for category in categories:
+            with st.expander(category.upper()):
+                with st.form(key=f"form_{category}"):
+                    input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
+                    submitted = st.form_submit_button(f"Log {category} Insight")
+                    if submitted and input_text.strip():
+                        lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
+                        for line in lines:
+                            parsed_time = extract_event_time(line)
+                            timestamp = parsed_time if parsed_time else datetime.utcnow().isoformat()
 
-        if 'Status' not in df.columns:
-            df['Status'] = 'Incomplete'
-        else:
-            df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
+                            entry = {
+                                "timestamp": timestamp,
+                                "category": category,
+                                "insight": line,
+                                "action_step": "",
+                                "source": "Clarity Coach"
+                            }
 
-        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+                            try:
+                                requests.post(webhook_url, json=entry)
+                            except Exception as e:
+                                st.warning(f"Failed to log to Google Sheet: {e}")
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        df = df[df['Timestamp'] > cutoff]
+                            try:
+                                requests.post(calendar_webhook_url, json=entry)
+                            except Exception as e:
+                                st.warning(f"Failed to log to Google Calendar: {e}")
 
-        if selected_categories:
-            selected_categories = [c.lower() for c in selected_categories]
-            df = df[df['Category'].isin(selected_categories)]
-
-        st.subheader("📋 All Rows (After Filtering)")
-        st.dataframe(df)
-
-    # --- CHAT TAB ---
-    with tabs[2]:
-        st.title("💬 Clarity Chat")
-
-        if not df.empty:
-            recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
-            recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
-
-            chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
-            if chat_input or recent_insights:
-                st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
-                system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": chat_input or "\n".join(recent_insights)}
-                ]
-                response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
-                reply = response.choices[0].message.content
-                st.chat_message("assistant").write(reply)
-            else:
-                st.info("You haven't shared any recent brain dumps or insights yet for me to analyze and identify the top 80/20 priorities. Please provide your thoughts, tasks, or notes for today, and I can help determine the key focus areas.")
-        else:
-            st.warning("No entries found in the last 30 days. Check your sheet or filters.")
+                        st.success(f"✅ Logged {len(lines)} insight(s) under {category}")

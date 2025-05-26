@@ -49,10 +49,13 @@ except Exception as e:
 # --- TIME PARSER ---
 def extract_event_time(insight, fallback_time=None):
     try:
-        dt = dtparser(insight, fuzzy=True, default=fallback_time or datetime.utcnow())
+        fallback = fallback_time or datetime.utcnow()
+        dt = dtparser(insight, fuzzy=True, default=fallback)
+        if dt < datetime.utcnow():
+            return fallback.isoformat()
         return dt.isoformat()
     except:
-        return None
+        return (fallback_time or datetime.utcnow()).isoformat()
 
 # --- STREAMLIT TABS ---
 if openai_ok and sheet_ok:

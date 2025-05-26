@@ -102,3 +102,102 @@ if openai_ok and sheet_ok:
                                 st.warning(f"Failed to log to Google Calendar: {e}")
 
                         st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
+
+    # --- RECALL TAB ---
+    with tabs[1]:
+        st.title("🔍 Recall Insights")
+        df = pd.DataFrame(data)
+        df.columns = df.columns.str.strip()
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        df = df.dropna(subset=['Timestamp'])
+
+        if 'Status' not in df.columns:
+            df['Status'] = 'Incomplete'
+        else:
+            df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
+
+        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+
+        selected_categories = st.multiselect("Select Categories", sorted(df['Category'].unique()), default=sorted(df['Category'].unique()))
+        days = st.slider("Days to look back", 1, 90, 30)
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        df = df[df['Timestamp'] > cutoff]
+        df = df[df['Category'].isin(selected_categories)]
+
+        show_completed = st.sidebar.checkbox("Show Completed Items", value=True)
+        debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
+
+        if debug_mode:
+            st.subheader("📋 All Rows (Raw Data)")
+            st.dataframe(df)
+
+        if not show_completed:
+            df = df[df['Status'] != 'Complete']
+
+        grouped = df.groupby('Category')
+        for category, group in grouped:
+            st.subheader(category.upper())
+            for i, row in group.iterrows():
+                insight = row['Insight']
+                ts = row['Timestamp']
+                checkbox = st.checkbox(f"{insight} ({ts.date()})", key=f"check_{i}")
+                if checkbox and row['Status'] != 'Complete':
+                    sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
+                    st.success("Marked as complete")
+
+        if st.button("🧠 Summarize Insights"):
+            if not df.empty:
+                insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
+                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
+                response = client.chat.completions.create(
+                    model="gpt-4.1-mini",
+                    messages=[
+                        {"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                st.markdown("### 🧠 Clarity Summary")
+                st.write(response.choices[0].message.content)
+            else:
+                st.info("No insights available to summarize. Try adjusting filters.")
+
+        st.markdown("---")
+        st.header("📈 Completion Metrics")
+
+        df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
+        completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
+        fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
+        st.plotly_chart(fig1, use_container_width=True)
+
+        category_summary = df[df['Status'] == 'Complete'].groupby('Category').size().reset_index(name='Completed')
+        fig2 = px.pie(category_summary, names='Category', values='Completed', title='Completed Insights by Category')
+        st.plotly_chart(fig2, use_container_width=True)
+
+        total = len(df)
+        completed = len(df[df['Status'] == 'Complete'])
+        if total > 0:
+            st.metric("Completion Rate", f"{(completed / total * 100):.1f}%")
+        else:
+            st.metric("Completion Rate", "0.0%")
+
+    # --- CHAT TAB ---
+    with tabs[2]:
+        st.title("💬 Clarity Chat")
+
+        recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
+        recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
+
+        chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
+        if chat_input or recent_insights:
+            st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
+            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_input or "\n".join(recent_insights)}
+            ]
+            response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
+            reply = response.choices[0].message.content
+            st.chat_message("assistant").write(reply)
+        else:
+            st.info("You haven't shared any recent brain dumps or insights yet for me to analyze and identify the top 80/20 priorities. Please provide your thoughts, tasks, or notes for today, and I can help determine the key focus areas.")

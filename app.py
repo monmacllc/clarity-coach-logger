@@ -59,17 +59,15 @@ except Exception as e:
     st.error("❌ Failed to connect to Google Sheet. Make sure the sheet is shared with your service account.")
     st.exception(e)
 
-# --- SMART TIME PARSER ---
-def extract_event_time(insight, fallback_time=None):
+# --- TIME + RECURRENCE PARSER ---
+def extract_event_info(insight, fallback_time=None):
     try:
         base = fallback_time or datetime.utcnow()
         text = insight.lower()
 
-        # --- Handle "tmr" or "tomorrow" ---
         if re.search(r"\btmr\b|\btomorrow\b", text):
             base += timedelta(days=1)
 
-        # --- Handle weekdays and "next <weekday>" ---
         weekdays = list(calendar.day_name)
         for i, day in enumerate(weekdays):
             if re.search(rf"\bnext {day.lower()}\b", text):
@@ -98,14 +96,25 @@ def extract_event_time(insight, fallback_time=None):
             start_dt = datetime.combine(base.date(), dtime(start_hour, start_min))
             if start_dt < datetime.utcnow():
                 start_dt += timedelta(days=1)
-            return start_dt.isoformat()
+        else:
+            start_dt = dtparser(insight, fuzzy=True, default=base)
+            if start_dt < datetime.utcnow():
+                start_dt += timedelta(days=1)
 
-        dt = dtparser(insight, fuzzy=True, default=base)
-        if dt < datetime.utcnow():
-            dt += timedelta(days=1)
-        return dt.isoformat()
-    except:
-        return (fallback_time or datetime.utcnow()).isoformat()
+        recurrence = None
+        if "every day" in text or "each day" in text:
+            recurrence = ["RRULE:FREQ=DAILY"]
+        elif "every weekday" in text:
+            recurrence = ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"]
+        elif re.search(r"every (mon|tue|wed|thu|fri|sat|sun)", text):
+            day_map = {"mon":"MO","tue":"TU","wed":"WE","thu":"TH","fri":"FR","sat":"SA","sun":"SU"}
+            day_key = re.search(r"every (mon|tue|wed|thu|fri|sat|sun)", text).group(1)
+            recurrence = [f"RRULE:FREQ=WEEKLY;BYDAY={day_map[day_key]}"]
+
+        return start_dt.isoformat(), recurrence
+
+    except Exception as e:
+        return (fallback_time or datetime.utcnow()).isoformat(), None
 
 # --- STREAMLIT TABS ---
 if openai_ok and sheet_ok:
@@ -123,17 +132,22 @@ if openai_ok and sheet_ok:
                     if submitted and input_text.strip():
                         lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
                         for line in lines:
-                            parsed_time = extract_event_time(line)
-                            timestamp = parsed_time if parsed_time else datetime.utcnow().isoformat()
+                            timestamp, recurrence = extract_event_info(line)
                             entry = {"timestamp": timestamp, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
+
                             try:
                                 requests.post(webhook_url, json=entry)
                             except Exception as e:
                                 st.warning(f"Failed to log to Google Sheet: {e}")
+
+                            cal_payload = entry.copy()
+                            if recurrence:
+                                cal_payload["recurrence"] = recurrence
                             try:
-                                requests.post(calendar_webhook_url, json=entry)
+                                requests.post(calendar_webhook_url, json=cal_payload)
                             except Exception as e:
                                 st.warning(f"Failed to log to Google Calendar: {e}")
+
                         st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
 
     with tabs[1]:

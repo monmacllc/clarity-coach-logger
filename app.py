@@ -63,6 +63,8 @@ try:
     else:
         df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+    if 'Priority' not in df.columns:
+        df['Priority'] = ''
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -114,18 +116,27 @@ if openai_ok and sheet_ok:
             st.dataframe(df)
         if not show_completed:
             recall_df = recall_df[recall_df['Status'] != 'Complete']
+
         grouped = recall_df.groupby('Category')
         for category, group in grouped:
             st.subheader(category.upper())
             for i, row in group.iterrows():
-                if st.checkbox(f"{row['Insight']} ({row['Timestamp'].date()})", key=f"check_{i}") and row['Status'] != 'Complete':
+                col1, col2 = st.columns([0.85, 0.15])
+                with col1:
+                    marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].date()})", key=f"check_{i}")
+                with col2:
+                    starred = st.checkbox("⭐", value=row.get('Priority', '').lower() == 'yes', key=f"star_{i}")
+                if marked and row['Status'] != 'Complete':
                     sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
+                if starred != (row.get('Priority', '').lower() == 'yes'):
+                    val = "Yes" if starred else ""
+                    sheet.update_cell(i + 2, df.columns.get_loc("Priority") + 1, val)
 
         if st.button("Summarize Insights"):
             if not recall_df.empty:
                 insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
-                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insights)
+                prompt = "Summarize these clarity insights by category. Then rank them by importance using 80/20 logic. Highlight the top 3 most important or high-leverage items.\n\n" + "\n".join(insights)
                 response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "system", "content": "You are Clarity Coach."}, {"role": "user", "content": prompt}])
                 st.markdown("### Clarity Summary")
                 st.write(response.choices[0].message.content)
@@ -150,7 +161,7 @@ if openai_ok and sheet_ok:
         chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
         if chat_input or recent_insights:
             st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
-            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
+            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Highlight the top 3 highest-leverage items. Provide a short, clear strategic summary."
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": chat_input or "\n".join(recent_insights)}]
             response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
             st.chat_message("assistant").write(response.choices[0].message.content)

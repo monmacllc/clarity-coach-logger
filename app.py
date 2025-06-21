@@ -115,6 +115,7 @@ if openai_ok and sheet_ok:
         days = st.slider("Days to look back", 1, 90, 30)
         recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
+        recall_df = recall_df.sort_values(by='Timestamp', ascending=False)
         show_completed = st.sidebar.checkbox("Show Completed Items", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 

@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import json
 from datetime import datetime, timedelta
+import pytz
 from dateutil.parser import parse as dtparser
 import dateparser
 import dateparser.search
@@ -36,7 +37,7 @@ def extract_event_info(text):
             end = start + timedelta(hours=1)
         return start.isoformat(), end.isoformat(), None
     # Fallback if no datetime is found
-    now = datetime.utcnow()
+    now = datetime.now(pytz.utc)
     return now.isoformat(), (now + timedelta(hours=1)).isoformat(), None
 
 try:
@@ -67,7 +68,7 @@ try:
     data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
     df = df.dropna(subset=['Timestamp'])
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
     df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
@@ -113,7 +114,7 @@ if openai_ok and sheet_ok:
         select_all = st.checkbox("Select All Categories", value=True)
         selected_categories = st.multiselect("Select Categories", options=standard_categories, default=standard_categories if select_all else [])
         days = st.slider("Days to look back", 1, 90, 30)
-        recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
+        recall_df = df[df['Timestamp'] > datetime.now(pytz.utc) - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
         recall_df = recall_df.sort_values(by='Timestamp', ascending=False)
         show_completed = st.sidebar.checkbox("Show Completed Items", True)
@@ -129,10 +130,11 @@ if openai_ok and sheet_ok:
         grouped = recall_df.groupby('Category')
         for category, group in grouped:
             st.subheader(category.upper())
+            group = group.sort_values(by='Timestamp', ascending=False)
             for i, row in group.iterrows():
                 col1, col2 = st.columns([0.85, 0.15])
                 with col1:
-                    marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].date()})", key=f"check_{i}")
+                    marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].strftime('%m/%d/%Y')})", key=f"check_{i}")
                 with col2:
                     is_starred = str(row.get('Priority', '')).strip().lower() == 'yes'
                     starred = st.checkbox("⭐", value=is_starred, key=f"star_{i}")
@@ -148,38 +150,3 @@ if openai_ok and sheet_ok:
                         st.info(f"Updated Priority at row {row_num}, column {col_num} to '{val}'")
                     except Exception as e:
                         st.warning(f"Failed to update Priority at row {row_num}, column {col_num}: {e}")
-
-        if st.button("Summarize Insights"):
-            if not recall_df.empty:
-                insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
-                prompt = "Summarize these clarity insights by category. Then rank them by importance using 80/20 logic. Highlight the top 3 most important or high-leverage items.\n\n" + "\n".join(insights)
-                response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "system", "content": "You are Clarity Coach."}, {"role": "user", "content": prompt}])
-                st.markdown("### Clarity Summary")
-                st.write(response.choices[0].message.content)
-
-        st.markdown("---")
-        st.header("Completion Metrics")
-        df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
-        completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
-        fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
-        st.plotly_chart(fig1, use_container_width=True)
-        category_summary = df[df['Status'] == 'Complete'].groupby('Category').size().reset_index(name='Completed')
-        fig2 = px.pie(category_summary, names='Category', values='Completed', title='Completed Insights by Category')
-        st.plotly_chart(fig2, use_container_width=True)
-        total = len(df)
-        completed = len(df[df['Status'] == 'Complete'])
-        st.metric("Completion Rate", f"{(completed / total * 100):.1f}%" if total > 0 else "0.0%")
-
-    with tabs[2]:
-        st.title("Clarity Chat")
-        recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
-        recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
-        chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
-        if chat_input or recent_insights:
-            st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
-            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Highlight the top 3 highest-leverage items. Provide a short, clear strategic summary."
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": chat_input or "\n".join(recent_insights)}]
-            response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
-            st.chat_message("assistant").write(response.choices[0].message.content)
-        else:
-            st.info("You haven't shared any recent brain dumps or insights yet. Add your thoughts to get focused feedback.")

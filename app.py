@@ -135,7 +135,9 @@ if openai_ok and sheet_ok:
         select_all = st.checkbox("Select All Categories", value=True)
         selected_categories = st.multiselect("Select Categories", options=standard_categories, default=standard_categories if select_all else [])
         days = st.slider("Days to look back", 1, 90, 30)
-        recall_df = df[df['Timestamp'].dt.date >= (datetime.now(pytz.utc).date() - timedelta(days=days))]
+        now = datetime.now(pytz.utc)
+        cutoff = now - timedelta(days=days)
+        recall_df = df[df['Timestamp'] >= cutoff]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
         recall_df = recall_df.sort_values(by='Timestamp', ascending=False)
         show_completed = st.sidebar.checkbox("Show Completed Items", False)

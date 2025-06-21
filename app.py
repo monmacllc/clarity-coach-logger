@@ -134,22 +134,24 @@ if openai_ok and sheet_ok:
         for category, group in grouped:
             st.subheader(category.upper())
             group = group.sort_values(by='Timestamp', ascending=False)
-            for i, row in group.iterrows():
+            for idx, row in group.iterrows():
                 col1, col2 = st.columns([0.85, 0.15])
                 with col1:
-                    marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].strftime('%m/%d/%Y')})", key=f"check_{i}")
+                    marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].strftime('%m/%d/%Y')})", key=f"check_{idx}")
                 with col2:
                     is_starred = str(row.get('Priority', '')).strip().lower() == 'yes'
-                    starred = st.checkbox("⭐", value=is_starred, key=f"star_{i}")
+                    starred = st.checkbox("⭐", value=is_starred, key=f"star_{idx}")
                 if marked and row['Status'] != 'Complete':
-                    sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
+                    row_index = df[df['Insight'] == row['Insight']].index[0] + 2
+                    sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
+                    st.success("Marked as complete")
                     st.success("Marked as complete")
                 if starred != is_starred:
                     val = "Yes" if starred else ""
-                    row_num = i + 2
+                    row_index = df[df['Insight'] == row['Insight']].index[0] + 2
                     col_num = df.columns.get_loc("Priority") + 1
                     try:
-                        sheet.update_cell(row_num, col_num, val)
+                        sheet.update_cell(row_index, col_num, val)
                         st.info(f"Updated Priority at row {row_num}, column {col_num} to '{val}'")
                     except Exception as e:
                         st.warning(f"Failed to update Priority at row {row_num}, column {col_num}: {e}")

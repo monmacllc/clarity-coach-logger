@@ -27,6 +27,10 @@ logging.basicConfig(level=logging.INFO)
 def extract_event_info(text):
     settings = {'PREFER_DAY_OF_MONTH': 'first', 'RELATIVE_BASE': datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
+    if not matches:
+        logging.warning(f"No date found in text: '{text}' — using fallback.")
+        now = datetime.now(pytz.utc)
+        return now.isoformat(), (now + timedelta(hours=1)).isoformat(), None
     if matches:
         start = matches[0][1]
         time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)

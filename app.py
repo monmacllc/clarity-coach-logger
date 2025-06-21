@@ -14,6 +14,7 @@ import pandas as pd
 import re
 
 st.set_page_config(page_title="Clarity Coach", layout="centered")
+
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
@@ -34,7 +35,9 @@ def extract_event_info(text):
         else:
             end = start + timedelta(hours=1)
         return start.isoformat(), end.isoformat(), None
-    return None, None, None
+    # Fallback if no datetime is found
+    now = datetime.utcnow()
+    return now.isoformat(), (now + timedelta(hours=1)).isoformat(), None
 
 try:
     client = OpenAI(api_key=openai_api_key)
@@ -66,15 +69,9 @@ try:
     df.columns = df.columns.str.strip()
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
-    if 'Status' not in df.columns:
-        df['Status'] = 'Incomplete'
-    else:
-        df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
-    if 'Priority' not in df.columns:
-        df['Priority'] = ''
-    else:
-        df['Priority'] = df['Priority'].astype(str).str.strip()
+    df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
+    df['Priority'] = df.get('Priority', '').astype(str).str.strip()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -97,33 +94,34 @@ if openai_ok and sheet_ok:
                         for line in lines:
                             start, end, recurrence = extract_event_info(line)
                             entry = {"timestamp": start, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
-                            try: requests.post(webhook_url, json=entry)
+                            print("Logging entry:", entry)
+                            try:
+                                requests.post(webhook_url, json=entry)
                             except: pass
+
                             cal_payload = {"start": start, "end": end, "summary": line, "category": category, "source": "Clarity Coach"}
-                            if recurrence: cal_payload["recurrence"] = recurrence
-                            try: requests.post(calendar_webhook_url, json=cal_payload)
+                            if recurrence:
+                                cal_payload["recurrence"] = recurrence
+                            try:
+                                requests.post(calendar_webhook_url, json=cal_payload)
                             except: pass
                         st.success(f"Logged {len(lines)} insight(s) under {category}")
 
     with tabs[1]:
         st.title("Recall Insights")
-
         standard_categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
         select_all = st.checkbox("Select All Categories", value=True)
-        selected_categories = st.multiselect(
-            "Select Categories",
-            options=standard_categories,
-            default=standard_categories if select_all else []
-        )
-
+        selected_categories = st.multiselect("Select Categories", options=standard_categories, default=standard_categories if select_all else [])
         days = st.slider("Days to look back", 1, 90, 30)
         recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
         show_completed = st.sidebar.checkbox("Show Completed Items", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
+
         if debug_mode:
             st.subheader("Raw Data")
             st.dataframe(df)
+
         if not show_completed:
             recall_df = recall_df[recall_df['Status'] != 'Complete']
 

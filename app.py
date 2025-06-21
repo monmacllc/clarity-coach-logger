@@ -114,6 +114,8 @@ def render_category_form(category):
                 df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
                 df['Priority'] = df.get('Priority', '').astype(str).str.strip()
 
+                st.write("New Data Snapshot:", df.tail(5))
+
 if openai_ok and sheet_ok:
     tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 

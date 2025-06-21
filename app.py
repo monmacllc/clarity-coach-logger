@@ -103,6 +103,17 @@ def render_category_form(category):
                     except: pass
                 st.success(f"Logged {len(lines)} insight(s) under {category}")
 
+                # Refresh Google Sheet data
+                test_values = sheet.get_all_values()
+                data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
+                df = pd.DataFrame(data)
+                df.columns = df.columns.str.strip()
+                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
+                df = df.dropna(subset=['Timestamp'])
+                df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+                df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
+                df['Priority'] = df.get('Priority', '').astype(str).str.strip()
+
 if openai_ok and sheet_ok:
     tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 

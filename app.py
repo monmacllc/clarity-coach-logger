@@ -25,7 +25,8 @@ logging.basicConfig(level=logging.INFO)
 
 # Helper: Natural language datetime extraction
 def extract_event_info(text):
-    matches = dateparser.search.search_dates(text, settings={'PREFER_DAY_OF_MONTH': 'first', 'RELATIVE_BASE': datetime.now(pytz.utc)})
+    settings = {'PREFER_DAY_OF_MONTH': 'first', 'RELATIVE_BASE': datetime.now(pytz.utc)}
+    matches = dateparser.search.search_dates(text, settings=settings)
     if matches:
         start = matches[0][1]
         time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)

@@ -13,12 +13,15 @@ from oauth2client.service_account import ServiceAccountCredentials
 import plotly.express as px
 import pandas as pd
 import re
+import logging
 
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
+
+logging.basicConfig(level=logging.INFO)
 
 # Helper: Natural language datetime extraction
 def extract_event_info(text):
@@ -36,7 +39,6 @@ def extract_event_info(text):
         else:
             end = start + timedelta(hours=1)
         return start.isoformat(), end.isoformat(), None
-    # Fallback if no datetime is found
     now = datetime.now(pytz.utc)
     return now.isoformat(), (now + timedelta(hours=1)).isoformat(), None
 
@@ -61,9 +63,8 @@ try:
     if 'Priority' not in header:
         header.append('Priority')
         sheet.resize(rows=len(test_values), cols=len(header))
-        sheet.update_cell(1, len(header), 'Priority')
-        for i in range(2, len(test_values) + 1):
-            sheet.update_cell(i, len(header), '')
+        updates = [[''] for _ in range(2, len(test_values) + 1)]
+        sheet.update(f'{chr(65 + len(header) - 1)}2:{chr(65 + len(header) - 1)}{len(test_values)}', updates)
 
     data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
     df = pd.DataFrame(data)
@@ -79,6 +80,28 @@ except Exception as e:
     st.error("Failed to connect to Google Sheet.")
     st.exception(e)
 
+def render_category_form(category):
+    with st.expander(category.upper()):
+        with st.form(key=f"form_{category}"):
+            input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
+            submitted = st.form_submit_button(f"Log {category} Insight")
+            if submitted and input_text.strip():
+                lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
+                for line in lines:
+                    start, end, recurrence = extract_event_info(line)
+                    entry = {"timestamp": start, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
+                    logging.info(f"Logging entry: {entry}")
+                    try:
+                        requests.post(webhook_url, json=entry)
+                    except: pass
+                    cal_payload = {"start": start, "end": end, "summary": line, "category": category, "source": "Clarity Coach"}
+                    if recurrence:
+                        cal_payload["recurrence"] = recurrence
+                    try:
+                        requests.post(calendar_webhook_url, json=cal_payload)
+                    except: pass
+                st.success(f"Logged {len(lines)} insight(s) under {category}")
+
 if openai_ok and sheet_ok:
     tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 
@@ -86,27 +109,7 @@ if openai_ok and sheet_ok:
         st.title("Clarity Coach")
         categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
         for category in categories:
-            with st.expander(category.upper()):
-                with st.form(key=f"form_{category}"):
-                    input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
-                    submitted = st.form_submit_button(f"Log {category} Insight")
-                    if submitted and input_text.strip():
-                        lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
-                        for line in lines:
-                            start, end, recurrence = extract_event_info(line)
-                            entry = {"timestamp": start, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
-                            print("Logging entry:", entry)
-                            try:
-                                requests.post(webhook_url, json=entry)
-                            except: pass
-
-                            cal_payload = {"start": start, "end": end, "summary": line, "category": category, "source": "Clarity Coach"}
-                            if recurrence:
-                                cal_payload["recurrence"] = recurrence
-                            try:
-                                requests.post(calendar_webhook_url, json=cal_payload)
-                            except: pass
-                        st.success(f"Logged {len(lines)} insight(s) under {category}")
+            render_category_form(category)
 
     with tabs[1]:
         st.title("Recall Insights")
@@ -117,7 +120,7 @@ if openai_ok and sheet_ok:
         recall_df = df[df['Timestamp'] > datetime.now(pytz.utc) - timedelta(days=days)]
         recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
         recall_df = recall_df.sort_values(by='Timestamp', ascending=False)
-        show_completed = st.sidebar.checkbox("Show Completed Items", True)
+        show_completed = st.sidebar.checkbox("Show Completed Items", False)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
         if debug_mode:

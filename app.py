@@ -54,22 +54,11 @@ except Exception as e:
     st.exception(e)
 
 # Google Sheets connectivity
-try:
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
-    gs_client = gspread.authorize(creds)
-    sheet = gs_client.open("Clarity Capture Log").sheet1
-    test_values = sheet.get_all_values()
-    header = [h.strip() for h in test_values[0]]
-
-    if 'Priority' not in header:
-        header.append('Priority')
-        sheet.resize(rows=len(test_values), cols=len(header))
-        updates = [[''] for _ in range(2, len(test_values) + 1)]
-        sheet.update(f'{chr(65 + len(header) - 1)}2:{chr(65 + len(header) - 1)}{len(test_values)}', updates)
-
-    data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
+def load_sheet_data():
+    sheet_ref = gs_client.open("Clarity Capture Log").sheet1
+    values = sheet_ref.get_all_values()
+    header = [h.strip() for h in values[0]]
+    data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in values[1:] if any(row)]
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
@@ -77,6 +66,14 @@ try:
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
     df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
     df['Priority'] = df.get('Priority', '').astype(str).str.strip()
+    return sheet_ref, df
+
+try:
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
+    gs_client = gspread.authorize(creds)
+    sheet, df = load_sheet_data()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -124,18 +121,9 @@ def render_category_form(category):
                 # Wait for webhook processing
                 time.sleep(2)
 
-                # Refresh Google Sheet data
-                test_values = sheet.get_all_values()
-                data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
-                global df
-                df = pd.DataFrame(data)
-                df.columns = df.columns.str.strip()
-                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
-                df = df.dropna(subset=['Timestamp'])
-                df['Category'] = df['Category'].astype(str).str.lower().str.strip()
-                df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
-                df['Priority'] = df.get('Priority', '').astype(str).str.strip()
-
+                # Re-load data with fresh sheet reference to avoid cache
+                global sheet, df
+                sheet, df = load_sheet_data()
                 st.write("New Data Snapshot:", df.tail(5))
 
 if openai_ok and sheet_ok:
@@ -165,12 +153,11 @@ if openai_ok and sheet_ok:
     # Recall Insights tab
     with tabs[1]:
         st.title("Recall Insights")
-        standard_categories = categories.copy()
         select_all = st.checkbox("Select All Categories", value=True)
         selected_categories = st.multiselect(
             "Select Categories",
-            options=standard_categories,
-            default=standard_categories if select_all else []
+            options=categories,
+            default=categories if select_all else []
         )
         num_entries = st.slider("Number of most recent entries to display", min_value=5, max_value=200, value=50)
         show_completed = st.sidebar.checkbox("Show Completed Items", False)

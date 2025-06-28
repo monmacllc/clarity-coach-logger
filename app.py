@@ -61,11 +61,14 @@ def load_sheet_data():
     df.columns = df.columns.str.strip()
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True, infer_datetime_format=True)
     df['CreatedAt'] = pd.to_datetime(df['CreatedAt'], errors='coerce', utc=True, infer_datetime_format=True)
+    # If CreatedAt is missing, fill it with Timestamp
+    df['CreatedAt'] = df['CreatedAt'].fillna(df['Timestamp'])
     df = df.dropna(subset=['CreatedAt'])
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
     df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
     df['Priority'] = df.get('Priority', '').astype(str).str.strip()
     return sheet_ref, df
+
 
 try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]

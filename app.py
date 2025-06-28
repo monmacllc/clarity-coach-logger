@@ -3,18 +3,16 @@ import requests
 import json
 from datetime import datetime, timedelta
 import pytz
-from dateutil.parser import parse as dtparser
 import dateparser
 import dateparser.search
 from openai import OpenAI
 import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import plotly.express as px
 import pandas as pd
 import re
 import logging
-import time  # <== NEW: Import time for sleep
+import time
 
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
@@ -32,22 +30,20 @@ def extract_event_info(text):
         logging.warning(f"No date found in text: '{text}' — using fallback.")
         now = datetime.now(pytz.utc)
         return now.isoformat(timespec='microseconds'), (now + timedelta(hours=1)).isoformat(timespec='microseconds'), None
-    if matches:
-        start = matches[0][1]
-        time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)
-        if time_range:
-            try:
-                start_hour = int(time_range.group(1))
-                end_hour = int(time_range.group(2))
-                end = start.replace(hour=end_hour)
-            except:
-                end = start + timedelta(hours=1)
-        else:
+    start = matches[0][1]
+    time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)
+    if time_range:
+        try:
+            start_hour = int(time_range.group(1))
+            end_hour = int(time_range.group(2))
+            end = start.replace(hour=end_hour)
+        except:
             end = start + timedelta(hours=1)
-        return start.isoformat(timespec='microseconds'), end.isoformat(timespec='microseconds'), None
-    now = datetime.now(pytz.utc)
-    return now.isoformat(timespec='microseconds'), (now + timedelta(hours=1)).isoformat(timespec='microseconds'), None
+    else:
+        end = start + timedelta(hours=1)
+    return start.isoformat(timespec='microseconds'), end.isoformat(timespec='microseconds'), None
 
+# OpenAI connectivity test
 try:
     client = OpenAI(api_key=openai_api_key)
     client.models.list()
@@ -57,6 +53,7 @@ except Exception as e:
     st.error("Failed to connect to OpenAI. Check your API key or billing status.")
     st.exception(e)
 
+# Google Sheets connectivity
 try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
@@ -86,6 +83,7 @@ except Exception as e:
     st.error("Failed to connect to Google Sheet.")
     st.exception(e)
 
+# Form for logging entries
 def render_category_form(category):
     with st.expander(category.upper()):
         with st.form(key=f"form_{category}"):
@@ -97,7 +95,7 @@ def render_category_form(category):
                     start, end, recurrence = extract_event_info(line)
                     entry = {
                         "timestamp": start,
-                        "category": category.lower().strip(),  # Normalize casing
+                        "category": category.lower().strip(),
                         "insight": line,
                         "action_step": "",
                         "source": "Clarity Coach"
@@ -107,7 +105,6 @@ def render_category_form(category):
                         requests.post(webhook_url, json=entry)
                     except Exception as e:
                         logging.warning(f"Webhook post failed: {e}")
-
                     cal_payload = {
                         "start": start,
                         "end": end,
@@ -124,12 +121,13 @@ def render_category_form(category):
 
                 st.success(f"Logged {len(lines)} insight(s) under {category}")
 
-                # Wait briefly to let webhook process complete
+                # Wait for webhook processing
                 time.sleep(2)
 
                 # Refresh Google Sheet data
                 test_values = sheet.get_all_values()
                 data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
+                global df
                 df = pd.DataFrame(data)
                 df.columns = df.columns.str.strip()
                 df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
@@ -186,35 +184,36 @@ if openai_ok and sheet_ok:
             options=standard_categories,
             default=standard_categories if select_all else []
         )
-        days = st.slider("Days to look back", 1, 90, 30)
-        now = datetime.now(pytz.utc)
-        cutoff = now - timedelta(days=days)
-        recall_df = df[df['Timestamp'] >= cutoff]
-        recall_df = recall_df[recall_df['Category'].isin([c.lower().strip() for c in selected_categories])]
-        recall_df = recall_df.sort_values(by='Timestamp', ascending=False)
+        num_entries = st.slider("Number of most recent entries to display", min_value=5, max_value=200, value=50)
         show_completed = st.sidebar.checkbox("Show Completed Items", False)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
-        if debug_mode:
-            st.subheader("Raw Data")
-            st.dataframe(df)
+        sorted_df = df.sort_values(by="Timestamp", ascending=False).copy()
+        filtered_df = sorted_df[sorted_df["Category"].isin([c.lower().strip() for c in selected_categories])]
 
         if not show_completed:
-            recall_df = recall_df[recall_df['Status'] != 'Complete']
+            filtered_df = filtered_df[filtered_df["Status"] != "Complete"]
 
-        grouped = recall_df.groupby('Category')
+        display_df = filtered_df.head(num_entries)
+
+        if debug_mode:
+            st.subheader("Raw Data")
+            st.dataframe(display_df)
+
+        grouped = display_df.groupby("Category")
+
         for category, group in grouped:
             st.subheader(category.upper())
-            group = group.sort_values(by='Timestamp', ascending=False)
+            group = group.sort_values(by="Timestamp", ascending=False)
             for idx, row in group.iterrows():
                 col1, col2 = st.columns([0.85, 0.15])
                 with col1:
                     marked = st.checkbox(
-                        f"{row['Insight']} ({row['Timestamp'].strftime('%m/%d/%Y')})",
+                        f"{row['Insight']} ({row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
                         key=f"check_{idx}"
                     )
                 with col2:
-                    is_starred = str(row.get('Priority', '')).strip().lower() == 'yes'
+                    is_starred = str(row.get("Priority", "")).strip().lower() == "yes"
                     starred = st.checkbox("⭐", value=is_starred, key=f"star_{idx}")
 
                 if marked and row['Status'] != 'Complete':

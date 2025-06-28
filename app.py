@@ -14,6 +14,7 @@ import plotly.express as px
 import pandas as pd
 import re
 import logging
+import time  # <== NEW: Import time for sleep
 
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
@@ -30,7 +31,7 @@ def extract_event_info(text):
     if not matches:
         logging.warning(f"No date found in text: '{text}' — using fallback.")
         now = datetime.now(pytz.utc)
-        return now.isoformat(), (now + timedelta(hours=1)).isoformat(), None
+        return now.isoformat(timespec='microseconds'), (now + timedelta(hours=1)).isoformat(timespec='microseconds'), None
     if matches:
         start = matches[0][1]
         time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)
@@ -43,9 +44,9 @@ def extract_event_info(text):
                 end = start + timedelta(hours=1)
         else:
             end = start + timedelta(hours=1)
-        return start.isoformat(), end.isoformat(), None
+        return start.isoformat(timespec='microseconds'), end.isoformat(timespec='microseconds'), None
     now = datetime.now(pytz.utc)
-    return now.isoformat(), (now + timedelta(hours=1)).isoformat(), None
+    return now.isoformat(timespec='microseconds'), (now + timedelta(hours=1)).isoformat(timespec='microseconds'), None
 
 try:
     client = OpenAI(api_key=openai_api_key)
@@ -94,18 +95,37 @@ def render_category_form(category):
                 lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
                 for line in lines:
                     start, end, recurrence = extract_event_info(line)
-                    entry = {"timestamp": start, "category": category, "insight": line, "action_step": "", "source": "Clarity Coach"}
+                    entry = {
+                        "timestamp": start,
+                        "category": category.lower().strip(),  # Normalize casing
+                        "insight": line,
+                        "action_step": "",
+                        "source": "Clarity Coach"
+                    }
                     logging.info(f"Logging entry: {entry}")
                     try:
                         requests.post(webhook_url, json=entry)
-                    except: pass
-                    cal_payload = {"start": start, "end": end, "summary": line, "category": category, "source": "Clarity Coach"}
+                    except Exception as e:
+                        logging.warning(f"Webhook post failed: {e}")
+
+                    cal_payload = {
+                        "start": start,
+                        "end": end,
+                        "summary": line,
+                        "category": category.lower().strip(),
+                        "source": "Clarity Coach"
+                    }
                     if recurrence:
                         cal_payload["recurrence"] = recurrence
                     try:
                         requests.post(calendar_webhook_url, json=cal_payload)
-                    except: pass
+                    except Exception as e:
+                        logging.warning(f"Calendar webhook post failed: {e}")
+
                 st.success(f"Logged {len(lines)} insight(s) under {category}")
+
+                # Wait briefly to let webhook process complete
+                time.sleep(2)
 
                 # Refresh Google Sheet data
                 test_values = sheet.get_all_values()
@@ -125,20 +145,52 @@ if openai_ok and sheet_ok:
 
     with tabs[0]:
         st.title("Clarity Coach")
-        categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
+        categories = [
+            "ccv",
+            "traditional real estate",
+            "stressors",
+            "co living",
+            "finances",
+            "body mind spirit",
+            "wife",
+            "kids",
+            "family",
+            "quality of life",
+            "fun",
+            "giving back",
+            "misc"
+        ]
         for category in categories:
             render_category_form(category)
 
     with tabs[1]:
         st.title("Recall Insights")
-        standard_categories = ["ccv", "traditional real estate", "stressors", "co living", "finances", "body mind spirit", "wife", "kids", "family", "quality of life", "fun", "giving back", "misc"]
+        standard_categories = [
+            "ccv",
+            "traditional real estate",
+            "stressors",
+            "co living",
+            "finances",
+            "body mind spirit",
+            "wife",
+            "kids",
+            "family",
+            "quality of life",
+            "fun",
+            "giving back",
+            "misc"
+        ]
         select_all = st.checkbox("Select All Categories", value=True)
-        selected_categories = st.multiselect("Select Categories", options=standard_categories, default=standard_categories if select_all else [])
+        selected_categories = st.multiselect(
+            "Select Categories",
+            options=standard_categories,
+            default=standard_categories if select_all else []
+        )
         days = st.slider("Days to look back", 1, 90, 30)
         now = datetime.now(pytz.utc)
         cutoff = now - timedelta(days=days)
         recall_df = df[df['Timestamp'] >= cutoff]
-        recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
+        recall_df = recall_df[recall_df['Category'].isin([c.lower().strip() for c in selected_categories])]
         recall_df = recall_df.sort_values(by='Timestamp', ascending=False)
         show_completed = st.sidebar.checkbox("Show Completed Items", False)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
@@ -157,21 +209,25 @@ if openai_ok and sheet_ok:
             for idx, row in group.iterrows():
                 col1, col2 = st.columns([0.85, 0.15])
                 with col1:
-                    marked = st.checkbox(f"{row['Insight']} ({row['Timestamp'].strftime('%m/%d/%Y')})", key=f"check_{idx}")
+                    marked = st.checkbox(
+                        f"{row['Insight']} ({row['Timestamp'].strftime('%m/%d/%Y')})",
+                        key=f"check_{idx}"
+                    )
                 with col2:
                     is_starred = str(row.get('Priority', '')).strip().lower() == 'yes'
                     starred = st.checkbox("⭐", value=is_starred, key=f"star_{idx}")
+
                 if marked and row['Status'] != 'Complete':
                     row_index = df[df['Insight'] == row['Insight']].index[0] + 2
                     sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
-                    st.success("Marked as complete")
+
                 if starred != is_starred:
                     val = "Yes" if starred else ""
                     row_index = df[df['Insight'] == row['Insight']].index[0] + 2
                     col_num = df.columns.get_loc("Priority") + 1
                     try:
                         sheet.update_cell(row_index, col_num, val)
-                        st.info(f"Updated Priority at row {row_num}, column {col_num} to '{val}'")
+                        st.info(f"Updated Priority at row {row_index}, column {col_num} to '{val}'")
                     except Exception as e:
-                        st.warning(f"Failed to update Priority at row {row_num}, column {col_num}: {e}")
+                        st.warning(f"Failed to update Priority at row {row_index}, column {col_num}: {e}")

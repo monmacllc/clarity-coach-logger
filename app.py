@@ -135,7 +135,7 @@ if openai_ok and sheet_ok:
         sorted_df = df.sort_values(by="Timestamp", ascending=False).copy()
         filtered_df = sorted_df[sorted_df["Category"].isin([c.lower() for c in selected])]
         st.write(filtered_df[['Timestamp','Insight']].head(5))
-        display_df = filtered_df.head(num_entries)
+        display_df = df.sort_values(by="Timestamp", ascending=False).head(num_entries)
         for idx, row in display_df.iterrows():
             st.markdown(f"**{row['Category'].capitalize()}**: {row['Insight']}  \n*{row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}*")
     with tabs[2]:

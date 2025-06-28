@@ -1,232 +1,203 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta
-import pytz
-import dateparser
-import dateparser.search
+from datetime import datetime, timedelta, date
+from dateutil.parser import parse as dtparser
 from openai import OpenAI
 import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import plotly.express as px
 import pandas as pd
-import re
-import logging
-import time
 
+# --- SETUP ---
 st.set_page_config(page_title="Clarity Coach", layout="centered")
-
 openai_api_key = os.getenv("OPENAI_API_KEY")
-webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
-calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
+webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"  # Google Sheets webhook
+calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"  # Google Calendar webhook
 
-logging.basicConfig(level=logging.INFO)
-
-# Helper: Natural language datetime extraction
-def extract_event_info(text):
-    settings = {'PREFER_DAY_OF_MONTH': 'first', 'RELATIVE_BASE': datetime.now(pytz.utc)}
-    matches = dateparser.search.search_dates(text, settings=settings)
-    if not matches:
-        logging.warning(f"No date found in text: '{text}' — using fallback.")
-        now = datetime.now(pytz.utc)
-        return now.isoformat(timespec='microseconds'), (now + timedelta(hours=1)).isoformat(timespec='microseconds'), None
-    start = matches[0][1]
-    time_range = re.search(r'(\d{1,2})(?::\d{2})?\s*[-to–]\s*(\d{1,2})(?::\d{2})?', text)
-    if time_range:
-        try:
-            start_hour = int(time_range.group(1))
-            end_hour = int(time_range.group(2))
-            end = start.replace(hour=end_hour)
-        except:
-            end = start + timedelta(hours=1)
-    else:
-        end = start + timedelta(hours=1)
-    return start.isoformat(timespec='microseconds'), end.isoformat(timespec='microseconds'), None
-
-# OpenAI connectivity test
+# --- CHECK OPENAI ACCESS ---
 try:
     client = OpenAI(api_key=openai_api_key)
     client.models.list()
     openai_ok = True
 except Exception as e:
     openai_ok = False
-    st.error("Failed to connect to OpenAI. Check your API key or billing status.")
+    st.error("❌ Failed to connect to OpenAI. Check your API key or billing status.")
     st.exception(e)
 
-# Google Sheets connectivity
+# --- GOOGLE SHEETS SETUP ---
 try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     service_key_json = os.getenv("GOOGLE_SERVICE_KEY")
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(service_key_json), scope)
     gs_client = gspread.authorize(creds)
     sheet = gs_client.open("Clarity Capture Log").sheet1
+
     test_values = sheet.get_all_values()
-    header = [h.strip() for h in test_values[0]]
+    st.success(f"✅ Successfully accessed Google Sheet. First row: {test_values[0]}")
 
-    if 'Priority' not in header:
-        header.append('Priority')
-        sheet.resize(rows=len(test_values), cols=len(header))
-        updates = [[''] for _ in range(2, len(test_values) + 1)]
-        sheet.update(f'{chr(65 + len(header) - 1)}2:{chr(65 + len(header) - 1)}{len(test_values)}', updates)
-
-    data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
+    rows_raw = test_values
+    header = [h.strip() for h in rows_raw[0]]
+    data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in rows_raw[1:] if any(row)]
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
     df = df.dropna(subset=['Timestamp'])
+
+    if 'Status' not in df.columns:
+        df['Status'] = 'Incomplete'
+    else:
+        df['Status'] = df['Status'].astype(str).str.strip().str.capitalize()
+
     df['Category'] = df['Category'].astype(str).str.lower().str.strip()
-    df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
-    df['Priority'] = df.get('Priority', '').astype(str).str.strip()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
-    st.error("Failed to connect to Google Sheet.")
+    st.error("❌ Failed to connect to Google Sheet. Make sure the sheet is shared with your service account.")
     st.exception(e)
 
-# Form for logging entries
-def render_category_form(category):
-    with st.expander(category.upper()):
-        with st.form(key=f"form_{category}"):
-            input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
-            submitted = st.form_submit_button(f"Log {category} Insight")
-            if submitted and input_text.strip():
-                lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
-                for line in lines:
-                    start, end, recurrence = extract_event_info(line)
-                    entry = {
-                        "timestamp": start,
-                        "category": category.lower().strip(),
-                        "insight": line,
-                        "action_step": "",
-                        "source": "Clarity Coach"
-                    }
-                    logging.info(f"Logging entry: {entry}")
-                    try:
-                        requests.post(webhook_url, json=entry)
-                    except Exception as e:
-                        logging.warning(f"Webhook post failed: {e}")
-                    cal_payload = {
-                        "start": start,
-                        "end": end,
-                        "summary": line,
-                        "category": category.lower().strip(),
-                        "source": "Clarity Coach"
-                    }
-                    if recurrence:
-                        cal_payload["recurrence"] = recurrence
-                    try:
-                        requests.post(calendar_webhook_url, json=cal_payload)
-                    except Exception as e:
-                        logging.warning(f"Calendar webhook post failed: {e}")
+# --- TIME PARSER ---
+def extract_event_time(insight, fallback_time=None):
+    try:
+        fallback = fallback_time or datetime.utcnow()
+        dt = dtparser(insight, fuzzy=True, default=fallback)
+        if dt < datetime.utcnow():
+            return fallback.isoformat()
+        return dt.isoformat()
+    except:
+        return (fallback_time or datetime.utcnow()).isoformat()
 
-                st.success(f"Logged {len(lines)} insight(s) under {category}")
-
-                # Wait for webhook processing
-                time.sleep(2)
-
-                # Refresh Google Sheet data
-                test_values = sheet.get_all_values()
-                data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in test_values[1:] if any(row)]
-                global df
-                df = pd.DataFrame(data)
-                df.columns = df.columns.str.strip()
-                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True)
-                df = df.dropna(subset=['Timestamp'])
-                df['Category'] = df['Category'].astype(str).str.lower().str.strip()
-                df['Status'] = df.get('Status', 'Incomplete').astype(str).str.strip().str.capitalize()
-                df['Priority'] = df.get('Priority', '').astype(str).str.strip()
-
-                st.write("New Data Snapshot:", df.tail(5))
-
+# --- STREAMLIT TABS ---
 if openai_ok and sheet_ok:
-    tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
+    tabs = st.tabs(["🚀 Log Clarity", "🔍 Recall Insights", "💬 Clarity Chat"])
 
+    # --- LOG TAB ---
     with tabs[0]:
-        st.title("Clarity Coach")
+        st.title("🧠 Clarity Coach")
+        st.write("Enter your insights directly by category. Each form below logs to your sheet and calendar.")
+
         categories = [
-            "ccv",
-            "traditional real estate",
-            "stressors",
-            "co living",
-            "finances",
-            "body mind spirit",
-            "wife",
-            "kids",
-            "family",
-            "quality of life",
-            "fun",
-            "giving back",
-            "misc"
+            "ccv", "traditional real estate", "stressors", "co living", "finances",
+            "body mind spirit", "wife", "kids", "family", "quality of life",
+            "fun", "giving back", "misc"
         ]
+
         for category in categories:
-            render_category_form(category)
+            with st.expander(category.upper()):
+                with st.form(key=f"form_{category}"):
+                    input_text = st.text_area(f"Insight for {category}", key=f"input_{category}", height=100)
+                    submitted = st.form_submit_button(f"Log {category} Insight")
+                    if submitted and input_text.strip():
+                        lines = [s.strip() for chunk in input_text.splitlines() for s in chunk.split(',') if s.strip()]
+                        for line in lines:
+                            parsed_time = extract_event_time(line)
+                            timestamp = parsed_time if parsed_time else datetime.utcnow().isoformat()
 
+                            entry = {
+                                "timestamp": timestamp,
+                                "category": category,
+                                "insight": line,
+                                "action_step": "",
+                                "source": "Clarity Coach"
+                            }
+
+                            try:
+                                requests.post(webhook_url, json=entry)
+                            except Exception as e:
+                                st.warning(f"Failed to log to Google Sheet: {e}")
+
+                            try:
+                                requests.post(calendar_webhook_url, json=entry)
+                            except Exception as e:
+                                st.warning(f"Failed to log to Google Calendar: {e}")
+
+                        st.success(f"✅ Logged {len(lines)} insight(s) under {category}")
+
+    # --- RECALL TAB ---
     with tabs[1]:
-        st.title("Recall Insights")
-        standard_categories = [
-            "ccv",
-            "traditional real estate",
-            "stressors",
-            "co living",
-            "finances",
-            "body mind spirit",
-            "wife",
-            "kids",
-            "family",
-            "quality of life",
-            "fun",
-            "giving back",
-            "misc"
-        ]
-        select_all = st.checkbox("Select All Categories", value=True)
-        selected_categories = st.multiselect(
-            "Select Categories",
-            options=standard_categories,
-            default=standard_categories if select_all else []
-        )
-        num_entries = st.slider("Number of most recent entries to display", min_value=5, max_value=200, value=50)
-        show_completed = st.sidebar.checkbox("Show Completed Items", False)
-        debug_mode = st.sidebar.checkbox("Debug Mode", False)
+        st.title("🔍 Recall Insights")
 
-        sorted_df = df.sort_values(by="Timestamp", ascending=False).copy()
-        filtered_df = sorted_df[sorted_df["Category"].isin([c.lower().strip() for c in selected_categories])]
+        selected_categories = st.multiselect("Select Categories", sorted(df['Category'].unique()), default=sorted(df['Category'].unique()))
+        days = st.slider("Days to look back", 1, 90, 30)
 
-        if not show_completed:
-            filtered_df = filtered_df[filtered_df["Status"] != "Complete"]
+        recall_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=days)]
+        recall_df = recall_df[recall_df['Category'].isin(selected_categories)]
 
-        display_df = filtered_df.head(num_entries)
+        show_completed = st.sidebar.checkbox("Show Completed Items", value=True)
+        debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 
         if debug_mode:
-            st.subheader("Raw Data")
-            st.dataframe(display_df)
+            st.subheader("📋 All Rows (Raw Data)")
+            st.dataframe(df)
 
-        grouped = display_df.groupby("Category")
+        if not show_completed:
+            recall_df = recall_df[recall_df['Status'] != 'Complete']
 
+        grouped = recall_df.groupby('Category')
         for category, group in grouped:
             st.subheader(category.upper())
-            group = group.sort_values(by="Timestamp", ascending=False)
-            for idx, row in group.iterrows():
-                col1, col2 = st.columns([0.85, 0.15])
-                with col1:
-                    marked = st.checkbox(
-                        f"{row['Insight']} ({row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
-                        key=f"check_{idx}"
-                    )
-                with col2:
-                    is_starred = str(row.get("Priority", "")).strip().lower() == "yes"
-                    starred = st.checkbox("⭐", value=is_starred, key=f"star_{idx}")
-
-                if marked and row['Status'] != 'Complete':
-                    row_index = df[df['Insight'] == row['Insight']].index[0] + 2
-                    sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
+            for i, row in group.iterrows():
+                insight = row['Insight']
+                ts = row['Timestamp']
+                checkbox = st.checkbox(f"{insight} ({ts.date()})", key=f"check_{i}")
+                if checkbox and row['Status'] != 'Complete':
+                    sheet.update_cell(i + 2, df.columns.get_loc("Status") + 1, "Complete")
                     st.success("Marked as complete")
 
-                if starred != is_starred:
-                    val = "Yes" if starred else ""
-                    row_index = df[df['Insight'] == row['Insight']].index[0] + 2
-                    col_num = df.columns.get_loc("Priority") + 1
-                    try:
-                        sheet.update_cell(row_index, col_num, val)
-                        st.info(f"Updated Priority at row {row_index}, column {col_num} to '{val}'")
-                    except Exception as e:
-                        st.warning(f"Failed to update Priority at row {row_index}, column {col_num}: {e}")
+        if st.button("🧠 Summarize Insights"):
+            if not recall_df.empty:
+                insight_texts = [f"- {row['Insight']} ({row['Category']})" for _, row in recall_df.iterrows() if pd.notnull(row['Insight']) and pd.notnull(row['Category'])]
+                prompt = "Summarize these clarity insights by category:\n\n" + "\n".join(insight_texts)
+                response = client.chat.completions.create(
+                    model="gpt-4.1-mini",
+                    messages=[
+                        {"role": "system", "content": "You are Clarity Coach. Return a structured, insightful summary by category."},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                st.markdown("### 🧠 Clarity Summary")
+                st.write(response.choices[0].message.content)
+            else:
+                st.info("No insights available to summarize. Try adjusting filters.")
+
+        st.markdown("---")
+        st.header("📈 Completion Metrics")
+
+        df['Week'] = df['Timestamp'].dt.to_period("W").apply(lambda r: r.start_time.date())
+        completion_trend = df[df['Status'] == 'Complete'].groupby('Week').size().reset_index(name='Completed')
+        fig1 = px.bar(completion_trend, x='Week', y='Completed', title='Weekly Completed Insights')
+        st.plotly_chart(fig1, use_container_width=True)
+
+        category_summary = df[df['Status'] == 'Complete'].groupby('Category').size().reset_index(name='Completed')
+        fig2 = px.pie(category_summary, names='Category', values='Completed', title='Completed Insights by Category')
+        st.plotly_chart(fig2, use_container_width=True)
+
+        total = len(df)
+        completed = len(df[df['Status'] == 'Complete'])
+        if total > 0:
+            st.metric("Completion Rate", f"{(completed / total * 100):.1f}%")
+        else:
+            st.metric("Completion Rate", "0.0%")
+
+    # --- CHAT TAB ---
+    with tabs[2]:
+        st.title("💬 Clarity Chat")
+
+        recent_df = df[df['Timestamp'] > datetime.utcnow() - timedelta(days=30)]
+        recent_insights = [f"- {row['Insight']} ({row['Category']})" for _, row in recent_df.iterrows() if pd.notnull(row['Insight'])]
+
+        chat_input = st.chat_input("Type your clarity dump, summary request, or question...")
+        if chat_input or recent_insights:
+            st.chat_message("user").write(chat_input or "Analyze my recent clarity insights")
+            system_prompt = "You are Clarity Coach. Help the user gain focus by analyzing the following insights. Identify themes, patterns, and top 80/20 priorities. Provide a short, clear strategic summary."
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_input or "\n".join(recent_insights)}
+            ]
+            response = client.chat.completions.create(model="gpt-4.1-mini", messages=messages)
+            reply = response.choices[0].message.content
+            st.chat_message("assistant").write(reply)
+        else:
+            st.info("You haven't shared any recent brain dumps or insights yet for me to analyze and identify the top 80/20 priorities. Please provide your thoughts, tasks, or notes for today, and I can help determine the key focus areas.")
+

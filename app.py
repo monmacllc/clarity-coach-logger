@@ -14,18 +14,18 @@ import re
 import logging
 import time
 
-# ✅ Streamlit Page Config
+# Streamlit Page Config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
-# ✅ API Keys and Webhook URLs
+# API Keys and Webhook URLs
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
 
-# ✅ Logging
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-# ✅ Safe date parsing helper
+# Safe date parsing helper
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
@@ -46,7 +46,7 @@ def extract_event_info(text):
         None,
     )
 
-# ✅ OpenAI connectivity
+# OpenAI connectivity
 try:
     client = OpenAI(api_key=openai_api_key)
     client.models.list()
@@ -56,7 +56,7 @@ except Exception as e:
     st.error("Failed to connect to OpenAI.")
     st.exception(e)
 
-# ✅ Load Google Sheet data
+# Google Sheets connectivity
 def load_sheet_data():
     sheet_ref = gs_client.open("Clarity Capture Log").sheet1
     values = sheet_ref.get_all_values()
@@ -92,7 +92,7 @@ def load_sheet_data():
     df["Device"] = df.get("Device", "").astype(str).str.strip()
     return sheet_ref, df
 
-# ✅ Connect to Google Sheets
+# Connect to Google Sheets
 try:
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -109,7 +109,7 @@ except Exception as e:
     st.error("Failed to connect to Google Sheet.")
     st.exception(e)
 
-# ✅ Form for logging insights
+# Form for logging entries
 def render_category_form(category):
     with st.expander(category.upper()):
         with st.form(key=f"form_{category}"):
@@ -120,4 +120,137 @@ def render_category_form(category):
             if submitted and input_text.strip():
                 lines = [
                     s.strip()
-                    for chunk in input
+                    for chunk in input_text.splitlines()
+                    for s in chunk.split(",")
+                    if s.strip()
+                ]
+                for line in lines:
+                    start, end, recurrence = extract_event_info(line)
+                    created_at = datetime.utcnow().isoformat(timespec="microseconds")
+                    entry = {
+                        "timestamp": start,
+                        "created_at": created_at,
+                        "category": category.lower().strip(),
+                        "insight": line,
+                        "action_step": "",
+                        "source": "Clarity Coach",
+                        "status": "Incomplete",
+                        "priority": "",
+                        "device": "Web",
+                    }
+                    # Post to webhook
+                    try:
+                        requests.post(webhook_url, json=entry)
+                    except Exception as e:
+                        logging.warning(e)
+                    # Post to calendar webhook
+                    cal_payload = {
+                        "start": start,
+                        "end": end,
+                        "summary": line,
+                        "category": category.lower().strip(),
+                        "source": "Clarity Coach",
+                    }
+                    try:
+                        requests.post(calendar_webhook_url, json=cal_payload)
+                    except Exception as e:
+                        logging.warning(e)
+                st.success(f"Logged {len(lines)} insight(s)")
+                time.sleep(3)  # Wait for webhook to finish
+                global sheet, df
+                sheet, df = load_sheet_data()
+                st.write("Latest entries:", df.tail(5))
+
+# Main App Tabs
+if openai_ok and sheet_ok:
+    tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
+
+    # Log Clarity
+    with tabs[0]:
+        st.title("Clarity Coach")
+        categories = [
+            "ccv",
+            "traditional real estate",
+            "stressors",
+            "co living",
+            "finances",
+            "body mind spirit",
+            "wife",
+            "kids",
+            "family",
+            "quality of life",
+            "fun",
+            "giving back",
+            "misc",
+        ]
+        for category in categories:
+            render_category_form(category)
+
+    # Recall Insights
+    with tabs[1]:
+        st.title("Recall Insights")
+        selected = st.multiselect(
+            "Categories", options=categories, default=categories
+        )
+        num_entries = st.slider("Entries to display", 5, 200, 50)
+        show_completed = st.sidebar.checkbox("Show Completed", True)
+        debug_mode = st.sidebar.checkbox("Debug Mode", False)
+
+        sorted_df = df.sort_values(by="CreatedAt", ascending=False).copy()
+        filtered_df = sorted_df[
+            sorted_df["Category"].isin([c.lower().strip() for c in selected])
+        ]
+
+        if not show_completed:
+            filtered_df = filtered_df[filtered_df["Status"] != "Complete"]
+
+        display_df = filtered_df.head(num_entries)
+
+        if debug_mode:
+            st.subheader("🚨 Debug Data")
+            st.dataframe(display_df)
+
+        for idx, row in display_df.iterrows():
+            col1, col2 = st.columns([0.85, 0.15])
+            with col1:
+                marked = st.checkbox(
+                    f"{row['Insight']} ({row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S')})",
+                    key=f"check_{idx}",
+                    value=row["Status"] == "Complete",
+                )
+            with col2:
+                starred = st.checkbox(
+                    "⭐", value=row["Priority"].lower() == "yes", key=f"star_{idx}"
+                )
+
+            if marked and row["Status"] != "Complete":
+                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
+                st.success("Marked as complete")
+
+            if starred and row["Priority"].lower() != "yes":
+                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "Yes")
+                st.info("Starred")
+            elif not starred and row["Priority"].lower() == "yes":
+                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
+                st.info("Unstarred")
+
+    # Clarity Chat
+    with tabs[2]:
+        st.title("Clarity Chat (AI Coach)")
+        chat = st.text_area("Ask Clarity Coach:")
+        if st.button("Ask"):
+            if chat.strip():
+                resp = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a clarity coach helping users improve their personal and professional life.",
+                        },
+                        {"role": "user", "content": chat},
+                    ],
+                )
+                st.write(resp.choices[0].message.content)

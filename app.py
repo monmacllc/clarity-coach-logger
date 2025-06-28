@@ -47,6 +47,19 @@ def load_sheet_data():
     header = [h.strip() for h in values[0]]
     data = [dict(zip(header, row + [''] * (len(header) - len(row)))) for row in values[1:] if any(row)]
     df = pd.DataFrame(data)
+    # 🚨 DEBUG DIAGNOSTICS
+    st.subheader("🚨 RAW Google Sheet Data (last 5 rows)")
+    st.write(values[-5:])
+
+    st.subheader("🚨 Parsed DataFrame (last 5 rows)")
+    st.write(df.tail(5))
+    
+    st.subheader("🚨 DataFrame Columns")
+    st.write(df.columns)
+    
+    st.write("🚨 Rows with invalid timestamps (NaT):")
+    st.write(df[df['Timestamp'].isna()])
+
     df.columns = df.columns.str.strip()
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True, infer_datetime_format=True)
     if df['Timestamp'].isna().any():

@@ -467,14 +467,9 @@ Provide specific recommendations and rationale.
                 axis=1
             )
 
-            # Prepare label text (always a string)
+            # Prepare label text (always string)
             entries_per_timeframe["label_text"] = entries_per_timeframe["DisplayCount"].apply(
                 lambda x: str(x)
-            )
-
-            # Compute dynamic dy: inside if >=10, above if <10
-            entries_per_timeframe["dy_value"] = entries_per_timeframe["DisplayCount"].apply(
-                lambda x: 5 if x >= 10 else -10
             )
 
             # Force order
@@ -514,23 +509,36 @@ Provide specific recommendations and rationale.
                 # Bar layer
                 bars = base.mark_bar()
 
-                # Text labels with dynamic dy
-                text = base.mark_text(
+                # Text labels inside bars (counts >=10)
+                text_inside = base.transform_filter(
+                    alt.datum.DisplayCount >= 10
+                ).mark_text(
                     align="center",
-                    dx=0,
+                    dy=5,
                     color="black"
                 ).encode(
-                    text="label_text:N",
-                    dy="dy_value:Q"
+                    text="label_text:N"
+                )
+
+                # Text labels above bars (counts <10)
+                text_above = base.transform_filter(
+                    alt.datum.DisplayCount < 10
+                ).mark_text(
+                    align="center",
+                    dy=-10,
+                    color="black"
+                ).encode(
+                    text="label_text:N"
                 )
 
                 # Combine chart
-                chart = (bars + text).properties(height=400)
+                chart = (bars + text_inside + text_above).properties(height=400)
 
                 st.altair_chart(chart, use_container_width=True)
 
         except Exception as e:
             st.error("⚠️ An error occurred while rendering the Insights Dashboard.")
             st.exception(e)
+
 
 

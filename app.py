@@ -218,7 +218,9 @@ if openai_ok and sheet_ok:
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
+        # ✅ Always sort by CreatedAt descending
         sorted_df = df.sort_values(by="CreatedAt", ascending=False).copy()
+
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
         ]

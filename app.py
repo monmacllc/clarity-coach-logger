@@ -384,7 +384,7 @@ Provide specific recommendations and rationale.
             if chat.strip():
                 run_clarity_chat(chat)
 
-        # Insights Dashboard Tab
+            # Insights Dashboard Tab
     with tabs[3]:
         try:
             st.title("📊 Insights Dashboard")
@@ -467,6 +467,11 @@ Provide specific recommendations and rationale.
                 axis=1
             )
 
+            # Prepare label text (always a string, even for 0)
+            entries_per_timeframe["label_text"] = entries_per_timeframe["DisplayCount"].apply(
+                lambda x: str(x)
+            )
+
             # Force order
             entries_per_timeframe["Timeframe"] = pd.Categorical(
                 entries_per_timeframe["Timeframe"],
@@ -510,7 +515,7 @@ Provide specific recommendations and rationale.
                     dy=-10,
                     color="black"
                 ).encode(
-                    text="DisplayCount:Q"
+                    text="label_text:N"
                 )
 
                 # Combine chart

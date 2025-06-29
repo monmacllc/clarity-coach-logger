@@ -222,12 +222,16 @@ if openai_ok and sheet_ok:
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
+        # Remove completed entries older than 14 days
         cutoff_14 = pd.Timestamp.utcnow() - pd.Timedelta(days=14)
-        df = df[~(
-            (df["Status"] == "Complete") &
-            (df["CreatedAt"] < cutoff_14)
-        )]
+        df = df[
+            ~(
+                (df["Status"] == "Complete") &
+                (df["CreatedAt"] < cutoff_14)
+            )
+        ]
 
+        # Filter based on user selection
         sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
@@ -245,6 +249,7 @@ if openai_ok and sheet_ok:
             st.subheader("🚨 Debug Data")
             st.dataframe(display_df)
 
+        # Show entries grouped by category
         for category in categories:
             cat_lower = category.lower().strip()
             cat_df = display_df[
@@ -297,9 +302,76 @@ if openai_ok and sheet_ok:
                     sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                     st.info("Unstarred")
 
+        # Prepare insights text
         insights_text = ""
         for idx, row in display_df.iterrows():
             insights_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
 
+        # Collect all incomplete/starred entries in last 30 days
         cutoff_30 = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
         recent_incomplete = df[
+            (df["Status"] != "Complete") &
+            (df["CreatedAt"] >= cutoff_30)
+        ]
+        recent_starred = df[
+            (df["Priority"].str.lower() == "yes") &
+            (df["CreatedAt"] >= cutoff_30)
+        ]
+
+        combined_recent = pd.concat([recent_incomplete, recent_starred]).drop_duplicates()
+        combined_recent = combined_recent[~combined_recent["Insight"].isin(display_df["Insight"])]
+
+        recent_text = ""
+        if not combined_recent.empty:
+            recent_text += "Additionally, here are other incomplete or important entries from the last 30 days:\n"
+            for idx, row in combined_recent.iterrows():
+                recent_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
+
+        # Show Clarity Coach recommendations
+        if not display_df.empty or not combined_recent.empty:
+            st.markdown("---")
+            st.subheader("🎯 Clarity Coach Recommendations")
+
+            with st.spinner("Analyzing with Clarity Coach..."):
+                resp = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
+                                "You are trained in elite human psychology, decision coaching, and behavior design. "
+                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
+                                "You cut through distractions, doubts, or emotional spirals quickly. "
+                                "You constantly re-anchor the user to their millionaire goal and identity. "
+                                "You help the user break big goals into daily tactical moves. "
+                                "You ask sharp, smart questions that help the user unlock stuck thinking. "
+                                "You provide weekly reviews and structured mindset coaching. "
+                                "You operate through five key functions: "
+                                "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
+                                "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
+                                "3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur. "
+                                "4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action. "
+                                "5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections. "
+                                "Whenever helpful, respond using frameworks, checklists, or pointed questions. "
+                                "Avoid comfort or vague encouragement unless explicitly requested. "
+                                "Challenge by default. Clarity over complexity. Forward momentum over overthinking. "
+                                "Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to. "
+                                "Provide specific recommendations and rationale."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Here are the current entries I'd like clarity on:\n\n"
+                                + insights_text
+                                + "\n\n"
+                                + recent_text
+                            )
+                        },
+                    ],
+                    temperature=0.2
+                )
+                st.write(resp.choices[0].message.content)
+        else:
+            st.info("No entries to analyze.")

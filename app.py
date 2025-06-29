@@ -14,10 +14,10 @@ import re
 import logging
 import time
 
-# Streamlit Page Config
+# Page Config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
-# API Keys and Webhook URLs
+# API Keys and Webhooks
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
@@ -25,7 +25,7 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Safe date parsing helper
+# Safe date parsing
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
@@ -53,16 +53,16 @@ try:
     openai_ok = True
 except Exception as e:
     openai_ok = False
-    st.error("Failed to connect to OpenAI.")
+    st.error("OpenAI error")
     st.exception(e)
 
-# Google Sheets connectivity
+# Load Google Sheet
 def load_sheet_data():
     sheet_ref = gs_client.open("Clarity Capture Log").sheet1
     values = sheet_ref.get_all_values()
     header = [h.strip() for h in values[0]]
 
-    # Ensure all expected columns exist
+    # Ensure columns exist
     required_columns = ["CreatedAt", "Status", "Priority", "Device"]
     for col in required_columns:
         if col not in header:
@@ -77,13 +77,8 @@ def load_sheet_data():
 
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
-    df["Timestamp"] = pd.to_datetime(
-        df["Timestamp"], errors="coerce", utc=True, infer_datetime_format=True
-    )
-    df["CreatedAt"] = pd.to_datetime(
-        df["CreatedAt"], errors="coerce", utc=True, infer_datetime_format=True
-    )
-    # Fallback: if CreatedAt missing, use Timestamp
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
+    df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
     df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
     df = df.dropna(subset=["CreatedAt"])
     df["Category"] = df["Category"].astype(str).str.lower().str.strip()
@@ -92,7 +87,7 @@ def load_sheet_data():
     df["Device"] = df.get("Device", "").astype(str).str.strip()
     return sheet_ref, df
 
-# Connect to Google Sheets
+# Connect to Sheets
 try:
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -106,16 +101,14 @@ try:
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
-    st.error("Failed to connect to Google Sheet.")
+    st.error("Google Sheets error")
     st.exception(e)
 
-# Form for logging entries
+# Log form
 def render_category_form(category):
     with st.expander(category.upper()):
         with st.form(key=f"form_{category}"):
-            input_text = st.text_area(
-                f"Insight for {category}", key=f"input_{category}", height=100
-            )
+            input_text = st.text_area(f"Insight for {category}", height=100)
             submitted = st.form_submit_button(f"Log {category}")
             if submitted and input_text.strip():
                 lines = [
@@ -138,12 +131,15 @@ def render_category_form(category):
                         "priority": "",
                         "device": "Web",
                     }
-                    # Post to webhook
+
+                    # ✅ Debug print of the payload
+                    st.write("🚨 Payload being sent to webhook:")
+                    st.json(entry)
+
                     try:
                         requests.post(webhook_url, json=entry)
                     except Exception as e:
                         logging.warning(e)
-                    # Post to calendar webhook
                     cal_payload = {
                         "start": start,
                         "end": end,
@@ -155,13 +151,14 @@ def render_category_form(category):
                         requests.post(calendar_webhook_url, json=cal_payload)
                     except Exception as e:
                         logging.warning(e)
+
                 st.success(f"Logged {len(lines)} insight(s)")
-                time.sleep(3)  # Wait for webhook to finish
+                time.sleep(3)
                 global sheet, df
                 sheet, df = load_sheet_data()
                 st.write("Latest entries:", df.tail(5))
 
-# Main App Tabs
+# Main Tabs
 if openai_ok and sheet_ok:
     tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 
@@ -189,9 +186,7 @@ if openai_ok and sheet_ok:
     # Recall Insights
     with tabs[1]:
         st.title("Recall Insights")
-        selected = st.multiselect(
-            "Categories", options=categories, default=categories
-        )
+        selected = st.multiselect("Categories", options=categories, default=categories)
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
@@ -200,7 +195,6 @@ if openai_ok and sheet_ok:
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
         ]
-
         if not show_completed:
             filtered_df = filtered_df[filtered_df["Status"] != "Complete"]
 

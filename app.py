@@ -386,7 +386,7 @@ Provide specific recommendations and rationale.
 
 
 
-        # Insights Dashboard Tab
+            # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
@@ -397,21 +397,28 @@ Provide specific recommendations and rationale.
 
         # Prepare date filtering
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-        df_filtered = df[df["CreatedAt"] >= pd.Timestamp.utcnow() - pd.Timedelta(days=days_back)]
+        df_filtered = df[df["CreatedAt"] >= pd.Timestamp.utcnow() - pd.Timedelta(days=days_back)].copy()
 
         # Determine the start of each week (Monday)
         df_filtered["WeekStart"] = df_filtered["CreatedAt"].dt.to_period("W").apply(lambda r: r.start_time)
 
-        # Create human-readable labels for each week bucket
-        df_filtered["WeekBucket"] = (pd.Timestamp.utcnow() - df_filtered["WeekStart"]).apply(
-            lambda delta: (
-                "Current Week" if delta <= pd.Timedelta(days=7) else
-                "Last Week" if delta <= pd.Timedelta(days=14) else
-                "2 Weeks Ago" if delta <= pd.Timedelta(days=21) else
-                "3 Weeks Ago" if delta <= pd.Timedelta(days=28) else
-                "4 Weeks Ago"
-            )
-        )
+        # Calculate how many days ago the week started
+        df_filtered["DaysAgo"] = df_filtered["WeekStart"].apply(lambda d: (pd.Timestamp.utcnow() - d).days)
+
+        # Create human-readable week buckets
+        def bucket_label(days_ago):
+            if days_ago <= 7:
+                return "Current Week"
+            elif days_ago <= 14:
+                return "Last Week"
+            elif days_ago <= 21:
+                return "2 Weeks Ago"
+            elif days_ago <= 28:
+                return "3 Weeks Ago"
+            else:
+                return "4 Weeks Ago"
+
+        df_filtered["WeekBucket"] = df_filtered["DaysAgo"].apply(bucket_label)
 
         # Standardize status
         df_filtered["Status"] = df_filtered["Status"].str.strip().str.capitalize()
@@ -445,5 +452,6 @@ Provide specific recommendations and rationale.
                 .properties(height=400)
             )
             st.altair_chart(chart, use_container_width=True)
+
 
 

@@ -375,3 +375,131 @@ if openai_ok and sheet_ok:
                 st.write(resp.choices[0].message.content)
         else:
             st.info("No entries to analyze.")
+
+    # Clarity Chat Tab
+    with tabs[2]:
+        st.title("Clarity Chat (AI Coach)")
+        chat = st.text_area("Ask Clarity Coach any question:")
+
+        if st.button("Ask"):
+            if chat.strip():
+                resp = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
+                                "You are trained in elite human psychology, decision coaching, and behavior design. "
+                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
+                                "You cut through distractions, doubts, or emotional spirals quickly. "
+                                "You constantly re-anchor the user to their millionaire goal and identity. "
+                                "You help the user break big goals into daily tactical moves. "
+                                "You ask sharp, smart questions that help the user unlock stuck thinking. "
+                                "You provide weekly reviews and structured mindset coaching. "
+                                "You operate through five key functions: "
+                                "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
+                                "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
+                                "3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur. "
+                                "4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action. "
+                                "5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections. "
+                                "Whenever helpful, respond using frameworks, checklists, or pointed questions. "
+                                "Avoid comfort or vague encouragement unless explicitly requested. "
+                                "Challenge by default. Clarity over complexity. Forward momentum over overthinking. "
+                                "Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to. "
+                                "Provide specific recommendations and rationale."
+                            )
+                        },
+                        {"role": "user", "content": chat},
+                    ],
+                    temperature=0.2
+                )
+                st.write(resp.choices[0].message.content)
+
+    # Insights Dashboard Tab
+    with tabs[3]:
+        st.title("📊 Insights Dashboard")
+
+        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
+        df["Week"] = df["CreatedAt"].dt.to_period("W").dt.start_time
+        df["Date"] = df["CreatedAt"].dt.date
+
+        st.markdown("### Entries by Week")
+        entries_per_week = (
+            df.groupby(["Week", "Status"])
+            .size()
+            .reset_index(name="Count")
+            .sort_values("Week")
+        )
+
+        if entries_per_week.empty:
+            st.info("No entries to display.")
+        else:
+            chart1 = (
+                alt.Chart(entries_per_week)
+                .mark_bar()
+                .encode(
+                    x=alt.X("Week:T", title="Week"),
+                    y=alt.Y("Count:Q", title="Entries"),
+                    color=alt.Color("Status:N"),
+                    tooltip=["Week", "Status", "Count"]
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(chart1, use_container_width=True)
+
+        st.markdown("### Entries by Category")
+        entries_by_category = (
+            df.groupby("Category")
+            .size()
+            .reset_index(name="Count")
+            .sort_values("Count", ascending=False)
+        )
+
+        if entries_by_category.empty:
+            st.info("No entries to display.")
+        else:
+            chart2 = (
+                alt.Chart(entries_by_category)
+                .mark_arc(innerRadius=50)
+                .encode(
+                    theta=alt.Theta("Count:Q"),
+                    color=alt.Color("Category:N"),
+                    tooltip=["Category", "Count"]
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(chart2, use_container_width=True)
+
+        st.markdown("### Completion Rate Over Time")
+        df["IsComplete"] = df["Status"].str.lower() == "complete"
+        completion_by_day = (
+            df.groupby("Date")
+            .agg(
+                Total=("IsComplete", "size"),
+                Completed=("IsComplete", "sum")
+            )
+            .reset_index()
+        )
+        completion_by_day["CompletionRate"] = (
+            completion_by_day["Completed"] / completion_by_day["Total"]
+        )
+
+        if completion_by_day.empty:
+            st.info("No data to calculate completion rates.")
+        else:
+            chart3 = (
+                alt.Chart(completion_by_day)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("Date:T"),
+                    y=alt.Y("CompletionRate:Q"),
+                    tooltip=[
+                        alt.Tooltip("Date:T"),
+                        alt.Tooltip("CompletionRate:Q", format=".0%")
+                    ]
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(chart3, use_container_width=True)
+

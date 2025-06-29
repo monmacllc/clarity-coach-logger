@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import requests
 import json
@@ -13,7 +14,7 @@ import pandas as pd
 import re
 import logging
 import time
-from googleapiclient.errors import HttpError
+from googleapiclient.errors import HttpError  # Required for Google API error handling
 
 # Streamlit Page Config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
@@ -188,6 +189,7 @@ def render_category_form(category):
                         requests.post(calendar_webhook_url, json=cal_payload)
                     except Exception as e:
                         logging.warning(f"Calendar webhook error: {str(e)}")
+                st musk
                 st.success(f"Logged {len(lines)} insight(s)")
                 st.cache_data.clear()  # Clear cache
                 # Retry fetching data to ensure new entry appears
@@ -305,3 +307,4 @@ if openai_ok and sheet_ok:
                     ],
                 )
                 st.write(resp.choices[0].message.content)
+```

@@ -386,23 +386,18 @@ Provide specific recommendations and rationale.
 
 
 
-                # Insights Dashboard Tab
+        # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
         st.markdown("### Entries by Week")
 
-        # Slider to pick how many days back
-        days_back = st.slider("Show data from the past N days:", 7, 30, 14)
-
         # Prepare date filtering
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-        df_filtered = df[df["CreatedAt"] >= pd.Timestamp.utcnow() - pd.Timedelta(days=days_back)].copy()
+        df_filtered = df.copy()
 
         # Determine the start of each week (Monday)
         df_filtered["WeekStart"] = df_filtered["CreatedAt"].dt.to_period("W").apply(lambda r: r.start_time)
-
-        # Make WeekStart timezone-aware (UTC)
         df_filtered["WeekStart"] = pd.to_datetime(df_filtered["WeekStart"], utc=True)
 
         # Calculate how many days ago the week started
@@ -419,9 +414,30 @@ Provide specific recommendations and rationale.
             elif days_ago <= 28:
                 return "3 Weeks Ago"
             else:
-                return "4 Weeks Ago"
+                return "4+ Weeks Ago"
 
         df_filtered["WeekBucket"] = df_filtered["DaysAgo"].apply(bucket_label)
+
+        # Checkboxes for cumulative selection
+        st.markdown("**Select Additional Weeks to Display:**")
+        col1, col2, col3 = st.columns(3)
+
+        show_last = col1.checkbox("Last Week")
+        show_2wk = col2.checkbox("2 Weeks Ago")
+        show_3wk = col3.checkbox("3 Weeks Ago")
+
+        # Build cumulative list of selected buckets
+        selected_weeks = ["Current Week"]
+
+        if show_last:
+            selected_weeks.append("Last Week")
+        if show_2wk:
+            selected_weeks.extend(["Last Week", "2 Weeks Ago"])
+        if show_3wk:
+            selected_weeks.extend(["Last Week", "2 Weeks Ago", "3 Weeks Ago"])
+
+        # Deduplicate (in case of multiple adds)
+        selected_weeks = list(dict.fromkeys(selected_weeks))
 
         # Standardize status
         df_filtered["Status"] = df_filtered["Status"].str.strip().str.capitalize()
@@ -434,9 +450,12 @@ Provide specific recommendations and rationale.
         )
 
         # Ensure weeks show in order
-        week_order = ["4 Weeks Ago", "3 Weeks Ago", "2 Weeks Ago", "Last Week", "Current Week"]
+        week_order = ["3 Weeks Ago", "2 Weeks Ago", "Last Week", "Current Week"]
         entries_per_week["WeekBucket"] = pd.Categorical(entries_per_week["WeekBucket"], categories=week_order, ordered=True)
         entries_per_week = entries_per_week.sort_values("WeekBucket")
+
+        # Filter based on cumulative selection
+        entries_per_week = entries_per_week[entries_per_week["WeekBucket"].isin(selected_weeks)]
 
         if entries_per_week.empty:
             st.info("No entries to display.")

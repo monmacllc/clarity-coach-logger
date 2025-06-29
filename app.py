@@ -104,7 +104,6 @@ def load_sheet_data():
 
     df = df.dropna(subset=["CreatedAt"])
 
-    # ✅ Convert RowIndex to numeric
     df["RowIndex"] = pd.to_numeric(df["RowIndex"], errors="coerce")
 
     df["Category"] = df["Category"].astype(str).str.lower().str.strip()
@@ -158,7 +157,6 @@ def render_category_form(category):
                         "device": "Web",
                     }
 
-                    # Debug payload
                     st.write("🚨 Payload sent to webhook:")
                     st.json(entry)
 
@@ -215,15 +213,13 @@ if openai_ok and sheet_ok:
         selected = st.multiselect("Categories", options=categories, default=categories)
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", True)
+        show_timestamps = st.sidebar.checkbox("Show Timestamps", False)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
-        # Parse timestamps again
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
-        # ✅ Always sort by RowIndex descending
         sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
-
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
         ]
@@ -237,29 +233,22 @@ if openai_ok and sheet_ok:
             st.dataframe(display_df)
 
         for idx, row in display_df.iterrows():
-            # If Show Completed is off, skip completed rows
-            if not show_completed and row["Status"] == "Complete":
-                continue
-
             created_at_str = (
                 row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
                 if pd.notnull(row["CreatedAt"])
                 else "No Log Time"
             )
 
-            # Label only shows timestamp if Show Completed is checked
-            if show_completed:
-                label_text = f"Logged: {created_at_str}"
-            else:
-                label_text = "Entry"
-
             col1, col2 = st.columns([0.85, 0.15])
+
             with col1:
                 marked = st.checkbox(
-                    label_text,
+                    "Entry",
                     key=f"check_{idx}",
                     value=row["Status"] == "Complete",
                 )
+                if show_timestamps:
+                    st.markdown(f"**Logged:** {created_at_str}")
 
             with col2:
                 starred = st.checkbox(

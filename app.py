@@ -232,51 +232,61 @@ if openai_ok and sheet_ok:
             st.subheader("🚨 Debug Data")
             st.dataframe(display_df)
 
-        for idx, row in display_df.iterrows():
-            # Skip completed entries if Show Completed is unchecked
-            if not show_completed and row["Status"] == "Complete":
+        # Loop by category in order
+        for category in categories:
+            cat_lower = category.lower().strip()
+            cat_df = display_df[
+                display_df["Category"] == cat_lower
+            ]
+
+            if cat_df.empty:
                 continue
 
-            created_at_str = (
-                row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
-                if pd.notnull(row["CreatedAt"])
-                else "No Log Time"
-            )
+            st.subheader(category.capitalize())
 
-            # ✅ Label shows Insight text
-            label_text = row["Insight"]
+            for idx, row in cat_df.iterrows():
+                if not show_completed and row["Status"] == "Complete":
+                    continue
 
-            col1, col2 = st.columns([0.85, 0.15])
-
-            with col1:
-                marked = st.checkbox(
-                    label_text,
-                    key=f"check_{idx}",
-                    value=row["Status"] == "Complete",
-                )
-                if show_timestamps:
-                    st.markdown(f"**Logged:** {created_at_str}")
-
-            with col2:
-                starred = st.checkbox(
-                    "⭐",
-                    value=row["Priority"].lower() == "yes",
-                    key=f"star_{idx}"
+                created_at_str = (
+                    row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
+                    if pd.notnull(row["CreatedAt"])
+                    else "No Log Time"
                 )
 
-            if marked and row["Status"] != "Complete":
-                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
-                st.success("Marked as complete")
+                label_text = row["Insight"]
 
-            if starred and row["Priority"].lower() != "yes":
-                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "Yes")
-                st.info("Starred")
-            elif not starred and row["Priority"].lower() == "yes":
-                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
-                st.info("Unstarred")
+                col1, col2 = st.columns([0.85, 0.15])
+
+                with col1:
+                    marked = st.checkbox(
+                        label_text,
+                        key=f"check_{idx}",
+                        value=row["Status"] == "Complete",
+                    )
+                    if show_timestamps:
+                        st.markdown(f"**Logged:** {created_at_str}")
+
+                with col2:
+                    starred = st.checkbox(
+                        "⭐",
+                        value=row["Priority"].lower() == "yes",
+                        key=f"star_{idx}"
+                    )
+
+                if marked and row["Status"] != "Complete":
+                    row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                    sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
+                    st.success("Marked as complete")
+
+                if starred and row["Priority"].lower() != "yes":
+                    row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                    sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "Yes")
+                    st.info("Starred")
+                elif not starred and row["Priority"].lower() == "yes":
+                    row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                    sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
+                    st.info("Unstarred")
 
     # Clarity Chat Tab
     with tabs[2]:

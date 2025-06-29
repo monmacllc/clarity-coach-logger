@@ -386,7 +386,7 @@ Provide specific recommendations and rationale.
 
 
 
-            # Insights Dashboard Tab
+                # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
@@ -401,6 +401,9 @@ Provide specific recommendations and rationale.
 
         # Determine the start of each week (Monday)
         df_filtered["WeekStart"] = df_filtered["CreatedAt"].dt.to_period("W").apply(lambda r: r.start_time)
+
+        # Make WeekStart timezone-aware (UTC)
+        df_filtered["WeekStart"] = pd.to_datetime(df_filtered["WeekStart"], utc=True)
 
         # Calculate how many days ago the week started
         df_filtered["DaysAgo"] = df_filtered["WeekStart"].apply(lambda d: (pd.Timestamp.utcnow() - d).days)
@@ -452,6 +455,7 @@ Provide specific recommendations and rationale.
                 .properties(height=400)
             )
             st.altair_chart(chart, use_container_width=True)
+
 
 
 

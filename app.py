@@ -16,6 +16,9 @@ import time
 # Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
+# Timezone
+local_tz = pytz.timezone("US/Pacific")
+
 # API Keys and Webhooks
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
@@ -207,7 +210,7 @@ if openai_ok and sheet_ok:
         show_completed = st.sidebar.checkbox("Show Completed", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
-        # Force timestamp parsing again here
+        # Parse timestamps again
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
@@ -226,16 +229,16 @@ if openai_ok and sheet_ok:
 
         for idx, row in display_df.iterrows():
             timestamp_str = (
-                row["Timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                row["Timestamp"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
                 if pd.notnull(row["Timestamp"])
                 else (
-                    row["CreatedAt"].strftime("%Y-%m-%d %H:%M:%S")
+                    row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
                     if pd.notnull(row["CreatedAt"])
                     else "No Date"
                 )
             )
             created_at_str = (
-                row["CreatedAt"].strftime("%Y-%m-%d %H:%M:%S")
+                row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
                 if pd.notnull(row["CreatedAt"])
                 else "No Log Time"
             )

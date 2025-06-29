@@ -42,7 +42,6 @@ def extract_event_info(text):
 
     start = matches[0][1]
 
-    # Reject unreasonable years
     if start.year < 1900 or start.year > 2100:
         start = now
 
@@ -128,7 +127,7 @@ except Exception as e:
     st.exception(e)
 
 # Log form per category
-def render_category_form(category, clarity_debug):
+def render_category_form(category, clarity_debug, show_starred):
     with st.expander(category.upper()):
         with st.form(key=f"form_{category}"):
             input_text = st.text_area(f"Insight for {category}", height=100)
@@ -180,6 +179,8 @@ def render_category_form(category, clarity_debug):
                 global sheet, df
                 sheet, df = load_sheet_data()
                 if clarity_debug:
+                    if show_starred:
+                        df = df[df["Priority"].str.lower() == "yes"]
                     st.write("Latest entries:", df.tail(5))
 
 # Main tabs
@@ -190,6 +191,7 @@ if openai_ok and sheet_ok:
     with tabs[0]:
         st.title("Clarity Coach")
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
+        show_starred = st.sidebar.checkbox("Show Starred Entries Only", False)
         categories = [
             "ccv",
             "traditional real estate",
@@ -206,14 +208,14 @@ if openai_ok and sheet_ok:
             "misc",
         ]
         for category in categories:
-            render_category_form(category, clarity_debug)
+            render_category_form(category, clarity_debug, show_starred)
 
     # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
         selected = st.multiselect("Categories", options=categories, default=categories)
         num_entries = st.slider("Entries to display", 5, 200, 50)
-        show_completed = st.sidebar.checkbox("Show Completed", True)
+        show_completed = st.sidebar.checkbox("Show Completed", False)
         show_timestamps = st.sidebar.checkbox("Show Timestamps", False)
         debug_mode = st.sidebar.checkbox("Recall Insight Debug Mode", False)
 

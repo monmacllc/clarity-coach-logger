@@ -70,7 +70,7 @@ def load_sheet_data():
     header = [h.strip() for h in values[0]]
 
     # Ensure required columns
-    required_columns = ["CreatedAt", "Status", "Priority", "Device"]
+    required_columns = ["CreatedAt", "Status", "Priority", "Device", "RowIndex"]
     for col in required_columns:
         if col not in header:
             header.append(col)
@@ -103,6 +103,9 @@ def load_sheet_data():
     df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
 
     df = df.dropna(subset=["CreatedAt"])
+
+    # ✅ Convert RowIndex to numeric
+    df["RowIndex"] = pd.to_numeric(df["RowIndex"], errors="coerce")
 
     df["Category"] = df["Category"].astype(str).str.lower().str.strip()
     df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
@@ -218,8 +221,8 @@ if openai_ok and sheet_ok:
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
-        # ✅ Always sort by CreatedAt descending
-        sorted_df = df.sort_values(by="CreatedAt", ascending=False).copy()
+        # ✅ Always sort by RowIndex descending
+        sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
 
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])

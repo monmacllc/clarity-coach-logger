@@ -386,111 +386,38 @@ Provide specific recommendations and rationale.
 
 
 
-            # Insights Dashboard Tab
-    with tabs[3]:
-        st.title("📊 Insights Dashboard")
-
-        st.markdown("### Entries by Disjoint Timeframes")
-
-        # Prepare dates
-        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-        df_filtered = df.copy()
-
-        # Calculate how many days ago
-        df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(
-            lambda d: (pd.Timestamp.utcnow() - d).days
-        )
-
-        # Assign to exactly one bucket
-        def bucket_label(days_ago):
-            if days_ago <= 7:
-                return "Last 7 Days"
-            elif days_ago <= 14:
-                return "Last 14 Days"
-            elif days_ago <= 21:
-                return "Last 21 Days"
-            elif days_ago <= 30:
-                return "Last 30 Days"
-            else:
-                return None
-
-        df_filtered["Timeframe"] = df_filtered["DaysAgo"].apply(bucket_label)
-
-        # Drop rows outside 30 days
-        df_filtered = df_filtered[df_filtered["Timeframe"].notnull()]
-
-        # Clean up status labels
-        df_filtered["Status"] = df_filtered["Status"].str.strip().str.capitalize()
-
-        # Aggregate counts
-        entries_per_timeframe = (
-            df_filtered.groupby(["Timeframe", "Status"])
-            .size()
-            .reset_index(name="Count")
-        )
-
-        # Ensure all combinations exist
-        all_timeframes = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
-        all_statuses = ["Complete", "Incomplete"]
-
-        idx = pd.MultiIndex.from_product(
-            [all_timeframes, all_statuses],
-            names=["Timeframe", "Status"]
-        )
-        entries_per_timeframe = (
-            entries_per_timeframe
-            .set_index(["Timeframe", "Status"])
-            .reindex(idx, fill_value=0)
-            .reset_index()
-        )
-
-        # Checkboxes to select which timeframes to show counts
-        st.markdown("**Select Timeframes to Display:**")
-        col1, col2, col3 = st.columns(3)
-
-        show_14 = col1.checkbox("Include Last 14 Days (8–14d)")
-        show_21 = col2.checkbox("Include Last 21 Days (15–21d)")
-        show_30 = col3.checkbox("Include Last 30 Days (22–30d)")
-
-        # Build list of selected buckets (Last 7 Days always included)
-        selected_buckets = ["Last 7 Days"]
-        if show_14:
-            selected_buckets.append("Last 14 Days")
-        if show_21:
-            selected_buckets.append("Last 21 Days")
-        if show_30:
-            selected_buckets.append("Last 30 Days")
-
-        # Mask counts for deselected buckets
-        entries_per_timeframe["Show"] = entries_per_timeframe["Timeframe"].isin(selected_buckets)
-        entries_per_timeframe["DisplayCount"] = entries_per_timeframe.apply(
-            lambda row: row["Count"] if row["Show"] else 0,
-            axis=1
-        )
-
-        # Force order
-        entries_per_timeframe["Timeframe"] = pd.Categorical(
-            entries_per_timeframe["Timeframe"],
-            categories=all_timeframes,
-            ordered=True
-        )
-
-        if entries_per_timeframe["DisplayCount"].sum() == 0:
+                if entries_per_timeframe["DisplayCount"].sum() == 0:
             st.info("No entries to display.")
         else:
             import altair as alt
 
-            chart = (
-                alt.Chart(entries_per_timeframe)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Timeframe:N", sort=all_timeframes, title="Timeframe"),
-                    y=alt.Y("DisplayCount:Q", title="Number of Entries"),
-                    color=alt.Color("Status:N"),
-                    tooltip=["Timeframe", "Status", "DisplayCount"]
-                )
-                .properties(height=400)
+            # Base bar chart
+            base = alt.Chart(entries_per_timeframe).encode(
+                x=alt.X("Timeframe:N", sort=all_timeframes, title="Timeframe"),
+                y=alt.Y("DisplayCount:Q", title="Number of Entries"),
+                color=alt.Color("Status:N"),
+                tooltip=["Timeframe", "Status", "DisplayCount"]
             )
+
+            bars = base.mark_bar()
+
+            # Text labels
+            text = base.mark_text(
+                align="center",
+                dx=0
+            ).encode(
+                text="DisplayCount:Q",
+                dy=alt.condition(
+                    alt.datum.DisplayCount < 10,
+                    alt.value(-10),  # Above bar if <10
+                    alt.value(5)     # Inside bar if ≥10
+                ),
+                color=alt.value("black")
+            )
+
+            chart = (bars + text).properties(height=400)
+
             st.altair_chart(chart, use_container_width=True)
+
 
 

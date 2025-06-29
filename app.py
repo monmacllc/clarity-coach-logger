@@ -13,7 +13,6 @@ import pandas as pd
 import re
 import logging
 import time
-from googleapiclient.errors import HttpError  # Required for Google API error handling
 
 # Streamlit Page Config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
@@ -25,12 +24,6 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 
 # Logging
 logging.basicConfig(level=logging.INFO)
-
-# Initialize session state for DataFrame and sheet
-if 'sheet' not in st.session_state:
-    st.session_state.sheet = None
-if 'df' not in st.session_state:
-    st.session_state.df = None
 
 # Safe date parsing helper
 def extract_event_info(text):
@@ -53,72 +46,6 @@ def extract_event_info(text):
         None,
     )
 
-# Cache data with short TTL to ensure fresh data
-@st.cache_data(ttl=10)
-def load_sheet_data(_attempt=0):
-    try:
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(
-            json.loads(os.getenv("GOOGLE_SERVICE_KEY")), scope
-        )
-        gs_client = gspread.authorize(creds)
-        sheet_ref = gs_client.open("Clarity Capture Log").sheet1
-        values = sheet_ref.get_all_values()
-        header = [h.strip() for h in values[0]]
-
-        # Ensure all expected columns exist
-        required_columns = ["CreatedAt", "Status", "Priority", "Device"]
-        for col in required_columns:
-            if col not in header:
-                header.append(col)
-                sheet_ref.resize(rows=len(values), cols=len(header))
-
-        data = []
-        for row in values[1:]:
-            padded_row = row + [""] * (len(header) - len(row))
-            record = dict(zip(header, padded_row))
-            data.append(record)
-
-        df = pd.DataFrame(data)
-        df.columns = df.columns.str.strip()
-        df["Timestamp"] = pd.to_datetime(
-            df["Timestamp"], errors="coerce", utc=True, infer_datetime_format=True
-        )
-        df["CreatedAt"] = pd.to_datetime(
-            df["CreatedAt"], errors="coerce", utc=True, infer_datetime_format=True
-        )
-        # Fallback: if CreatedAt missing, use Timestamp or current time
-        now = pd.Timestamp.now(tz='UTC')
-        df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"]).fillna(now)
-        # Filter out far-future dates
-        max_valid_date = now + pd.Timedelta(days=730)  # 2 years from now
-        invalid_dates = df["CreatedAt"] > max_valid_date
-        if invalid_dates.any():
-            logging.warning(f"Found {invalid_dates.sum()} entries with far-future CreatedAt: {df[invalid_dates][['Insight', 'CreatedAt']].to_dict()}")
-            st.warning(f"Found {invalid_dates.sum()} entries with invalid timestamps (future dates)")
-            df.loc[invalid_dates, "CreatedAt"] = now  # Reset to current time
-        if df["CreatedAt"].isna().any():
-            logging.warning("Rows with invalid CreatedAt detected")
-            st.warning("Some entries have invalid timestamps")
-            df["CreatedAt"] = df["CreatedAt"].fillna(now)
-        df = df.dropna(subset=["CreatedAt"])
-        df["Category"] = df["Category"].astype(str).str.lower().str.strip()
-        df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
-        df["Priority"] = df.get("Priority", "").astype(str).str.strip()
-        df["Device"] = df.get("Device", "").astype(str).str.strip()
-        return sheet_ref, df
-    except HttpError as e:
-        if e.resp.status in [429, 503] and _attempt < 3:
-            time.sleep(2 ** _attempt)  # Exponential backoff
-            return load_sheet_data(_attempt=_attempt + 1)
-        else:
-            raise Exception(f"Failed to load sheet after {_attempt + 1} attempts: {str(e)}")
-    except Exception as e:
-        raise Exception(f"Failed to load sheet: {str(e)}")
-
 # OpenAI connectivity
 try:
     client = OpenAI(api_key=openai_api_key)
@@ -129,9 +56,53 @@ except Exception as e:
     st.error("Failed to connect to OpenAI.")
     st.exception(e)
 
+# Google Sheets connectivity
+def load_sheet_data():
+    sheet_ref = gs_client.open("Clarity Capture Log").sheet1
+    values = sheet_ref.get_all_values()
+    header = [h.strip() for h in values[0]]
+
+    # Ensure all expected columns exist
+    required_columns = ["CreatedAt", "Status", "Priority", "Device"]
+    for col in required_columns:
+        if col not in header:
+            header.append(col)
+            sheet_ref.resize(rows=len(values), cols=len(header))
+
+    data = []
+    for row in values[1:]:
+        padded_row = row + [""] * (len(header) - len(row))
+        record = dict(zip(header, padded_row))
+        data.append(record)
+
+    df = pd.DataFrame(data)
+    df.columns = df.columns.str.strip()
+    df["Timestamp"] = pd.to_datetime(
+        df["Timestamp"], errors="coerce", utc=True, infer_datetime_format=True
+    )
+    df["CreatedAt"] = pd.to_datetime(
+        df["CreatedAt"], errors="coerce", utc=True, infer_datetime_format=True
+    )
+    # Fallback: if CreatedAt missing, use Timestamp
+    df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
+    df = df.dropna(subset=["CreatedAt"])
+    df["Category"] = df["Category"].astype(str).str.lower().str.strip()
+    df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
+    df["Priority"] = df.get("Priority", "").astype(str).str.strip()
+    df["Device"] = df.get("Device", "").astype(str).str.strip()
+    return sheet_ref, df
+
 # Connect to Google Sheets
 try:
-    st.session_state.sheet, st.session_state.df = load_sheet_data()
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        json.loads(os.getenv("GOOGLE_SERVICE_KEY")), scope
+    )
+    gs_client = gspread.authorize(creds)
+    sheet, df = load_sheet_data()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -169,13 +140,9 @@ def render_category_form(category):
                     }
                     # Post to webhook
                     try:
-                        response = requests.post(webhook_url, json=entry, timeout=10)
-                        if response.status_code != 200:
-                            st.error(f"Webhook failed: {response.text}")
-                            logging.error(f"Webhook error: {response.text}")
+                        requests.post(webhook_url, json=entry)
                     except Exception as e:
-                        st.error(f"Webhook error: {str(e)}")
-                        logging.error(f"Webhook exception: {str(e)}")
+                        logging.warning(e)
                     # Post to calendar webhook
                     cal_payload = {
                         "start": start,
@@ -185,26 +152,14 @@ def render_category_form(category):
                         "source": "Clarity Coach",
                     }
                     try:
-                        requests.post(calendar_webhook_url, json=cal_payload, timeout=10)
+                        requests.post(calendar_webhook_url, json=cal_payload)
                     except Exception as e:
-                        logging.warning(f"Calendar webhook error: {str(e)}")
+                        logging.warning(e)
                 st.success(f"Logged {len(lines)} insight(s)")
-                st.cache_data.clear()  # Clear cache
-                # Retry fetching data to ensure new entry appears
-                max_retries = 4
-                wait_time = 10  # Increased wait time
-                for attempt in range(max_retries):
-                    time.sleep(wait_time)
-                    sheet_new, df_new = load_sheet_data()
-                    if df_new["Insight"].str.contains(line, case=False, na=False).any():
-                        st.session_state.sheet, st.session_state.df = sheet_new, df_new
-                        break
-                else:
-                    st.warning(f"New entry '{line}' not found in sheet after {max_retries} retries")
-                    logging.warning(f"Entry '{line}' not found after {max_retries} retries")
-                st.write("Latest entries:", st.session_state.df.tail(5))
-                return st.session_state.sheet, st.session_state.df
-    return st.session_state.sheet, st.session_state.df
+                time.sleep(3)  # Wait for webhook to finish
+                global sheet, df
+                sheet, df = load_sheet_data()
+                st.write("Latest entries:", df.tail(5))
 
 # Main App Tabs
 if openai_ok and sheet_ok:
@@ -229,30 +184,19 @@ if openai_ok and sheet_ok:
             "misc",
         ]
         for category in categories:
-            st.session_state.sheet, st.session_state.df = render_category_form(category)
+            render_category_form(category)
 
     # Recall Insights
     with tabs[1]:
         st.title("Recall Insights")
-        if st.button("Refresh Data"):
-            st.cache_data.clear()
-            st.session_state.sheet, st.session_state.df = load_sheet_data()
-            st.success("Data refreshed")
         selected = st.multiselect(
             "Categories", options=categories, default=categories
         )
-        num_entries = st.slider("Entries to display", 5, 500, 200)  # Increased default
+        num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
-        # Try sorting by CreatedAt, fallback to Timestamp if problematic
-        try:
-            sorted_df = st.session_state.df.sort_values(by="CreatedAt", ascending=False).copy()
-        except Exception as e:
-            logging.warning(f"Error sorting by CreatedAt: {str(e)}. Falling back to Timestamp")
-            st.warning("Issue with CreatedAt sorting, using Timestamp instead")
-            sorted_df = st.session_state.df.sort_values(by="Timestamp", ascending=False).copy()
-
+        sorted_df = df.sort_values(by="CreatedAt", ascending=False).copy()
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
         ]
@@ -264,20 +208,13 @@ if openai_ok and sheet_ok:
 
         if debug_mode:
             st.subheader("🚨 Debug Data")
-            st.write("Raw DataFrame:", st.session_state.df)
-            st.write("Sorted DataFrame:", sorted_df.head(num_entries))
-            st.write("Filtered DataFrame:", display_df)
-            st.write("Latest 5 entries:", st.session_state.df.tail(5))
-            # Show entries with recent CreatedAt for debugging
-            recent_entries = st.session_state.df[st.session_state.df["CreatedAt"] > pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=7)]
-            st.write("Entries from last 7 days:", recent_entries)
+            st.dataframe(display_df)
 
         for idx, row in display_df.iterrows():
             col1, col2 = st.columns([0.85, 0.15])
             with col1:
-                timestamp_str = row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S') if pd.notna(row['Timestamp']) else "Unknown"
                 marked = st.checkbox(
-                    f"{row['Insight']} ({timestamp_str})",
+                    f"{row['Insight']} ({row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S')})",
                     key=f"check_{idx}",
                     value=row["Status"] == "Complete",
                 )
@@ -287,24 +224,18 @@ if openai_ok and sheet_ok:
                 )
 
             if marked and row["Status"] != "Complete":
-                row_index = st.session_state.df[st.session_state.df["Insight"] == row["Insight"]].index[0] + 2
-                st.session_state.sheet.update_cell(row_index, st.session_state.df.columns.get_loc("Status") + 1, "Complete")
+                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
                 st.success("Marked as complete")
-                st.cache_data.clear()
-                st.session_state.sheet, st.session_state.df = load_sheet_data()
 
             if starred and row["Priority"].lower() != "yes":
-                row_index = st.session_state.df[st.session_state.df["Insight"] == row["Insight"]].index[0] + 2
-                st.session_state.sheet.update_cell(row_index, st.session_state.df.columns.get_loc("Priority") + 1, "Yes")
+                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "Yes")
                 st.info("Starred")
-                st.cache_data.clear()
-                st.session_state.sheet, st.session_state.df = load_sheet_data()
             elif not starred and row["Priority"].lower() == "yes":
-                row_index = st.session_state.df[st.session_state.df["Insight"] == row["Insight"]].index[0] + 2
-                st.session_state.sheet.update_cell(row_index, st.session_state.df.columns.get_loc("Priority") + 1, "")
+                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
+                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                 st.info("Unstarred")
-                st.cache_data.clear()
-                st.session_state.sheet, st.session_state.df = load_sheet_data()
 
     # Clarity Chat
     with tabs[2]:

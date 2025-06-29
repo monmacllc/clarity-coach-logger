@@ -437,12 +437,12 @@ with tabs[3]:
             .reset_index()
         )
 
-        # Timeframe checkboxes
+        # Timeframe checkboxes with simplified labels
         st.markdown("### Entries by Disjoint Timeframes")
         col1, col2, col3 = st.columns(3)
-        show_14 = col1.checkbox("Include Last 14 Days (8–14d)")
-        show_21 = col2.checkbox("Include Last 21 Days (15–21d)")
-        show_30 = col3.checkbox("Include Last 30 Days (22–30d)")
+        show_14 = col1.checkbox("Include Last 14 Days")
+        show_21 = col2.checkbox("Include Last 21 Days")
+        show_30 = col3.checkbox("Include Last 30 Days")
 
         selected_buckets = ["Last 7 Days"]
         if show_14:
@@ -546,3 +546,4 @@ with tabs[3]:
     except Exception as e:
         st.error("⚠️ An error occurred while rendering the Insights Dashboard.")
         st.exception(e)
+

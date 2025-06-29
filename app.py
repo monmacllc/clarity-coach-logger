@@ -384,7 +384,7 @@ Provide specific recommendations and rationale.
             if chat.strip():
                 run_clarity_chat(chat)
 
-        # Insights Dashboard Tab
+            # Insights Dashboard Tab
     with tabs[3]:
         try:
             st.title("📊 Insights Dashboard")
@@ -467,9 +467,9 @@ Provide specific recommendations and rationale.
                 axis=1
             )
 
-            # Prepare label text (only show if >0)
+            # Prepare label text (show nothing if 0)
             entries_per_timeframe["label_text"] = entries_per_timeframe["DisplayCount"].apply(
-                lambda x: str(x) if x > 0 else None
+                lambda x: str(x) if x > 0 else ""
             )
 
             # Force order
@@ -539,3 +539,4 @@ Provide specific recommendations and rationale.
         except Exception as e:
             st.error("⚠️ An error occurred while rendering the Insights Dashboard.")
             st.exception(e)
+

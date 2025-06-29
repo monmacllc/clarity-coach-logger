@@ -216,6 +216,13 @@ if openai_ok and sheet_ok:
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
+        # Prune completed entries older than 14 days
+        cutoff_14 = pd.Timestamp.utcnow() - pd.Timedelta(days=14)
+        df = df[~(
+            (df["Status"] == "Complete") &
+            (df["CreatedAt"] < cutoff_14)
+        )]
+
         sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
@@ -285,12 +292,30 @@ if openai_ok and sheet_ok:
                     sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                     st.info("Unstarred")
 
-        # Auto-send to Clarity Coach
-        if not display_df.empty:
-            insights_text = ""
-            for idx, row in display_df.iterrows():
-                insights_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
+        insights_text = ""
+        for idx, row in display_df.iterrows():
+            insights_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
 
+        cutoff_30 = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
+        recent_incomplete = df[
+            (df["Status"] != "Complete") &
+            (df["CreatedAt"] >= cutoff_30)
+        ]
+        recent_starred = df[
+            (df["Priority"].str.lower() == "yes") &
+            (df["CreatedAt"] >= cutoff_30)
+        ]
+
+        combined_recent = pd.concat([recent_incomplete, recent_starred]).drop_duplicates()
+        combined_recent = combined_recent[~combined_recent["Insight"].isin(display_df["Insight"])]
+
+        recent_text = ""
+        if not combined_recent.empty:
+            recent_text += "Additionally, here are other incomplete or important entries from the last 30 days:\n"
+            for idx, row in combined_recent.iterrows():
+                recent_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
+
+        if not display_df.empty or not combined_recent.empty:
             st.markdown("---")
             st.subheader("🎯 Clarity Coach Recommendations")
 
@@ -327,6 +352,8 @@ if openai_ok and sheet_ok:
                             "content": (
                                 "Here are the current entries I'd like clarity on:\n\n"
                                 + insights_text
+                                + "\n\n"
+                                + recent_text
                             )
                         },
                     ],

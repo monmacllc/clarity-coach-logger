@@ -493,6 +493,4 @@ Provide specific recommendations and rationale.
             )
             st.altair_chart(chart, use_container_width=True)
 
-            )
-            st.altair_chart(chart, use_container_width=True)
 

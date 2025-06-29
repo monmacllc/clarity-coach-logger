@@ -13,6 +13,7 @@ import pandas as pd
 import re
 import logging
 import time
+from googleapiclient.errors import HttpError
 
 # Streamlit Page Config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
@@ -46,6 +47,63 @@ def extract_event_info(text):
         None,
     )
 
+# Cache data with short TTL to ensure fresh data
+@st.cache_data(ttl=10)
+def load_sheet_data(_attempt=0):
+    try:
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+            json.loads(os.getenv("GOOGLE_SERVICE_KEY")), scope
+        )
+        gs_client = gspread.authorize(creds)
+        sheet_ref = gs_client.open("Clarity Capture Log").sheet1
+        values = sheet_ref.get_all_values()
+        header = [h.strip() for h in values[0]]
+
+        # Ensure all expected columns exist
+        required_columns = ["CreatedAt", "Status", "Priority", "Device"]
+        for col in required_columns:
+            if col not in header:
+                header.append(col)
+                sheet_ref.resize(rows=len(values), cols=len(header))
+
+        data = []
+        for row in values[1:]:
+            padded_row = row + [""] * (len(header) - len(row))
+            record = dict(zip(header, padded_row))
+            data.append(record)
+
+        df = pd.DataFrame(data)
+        df.columns = df.columns.str.strip()
+        df["Timestamp"] = pd.to_datetime(
+            df["Timestamp"], errors="coerce", utc=True, infer_datetime_format=True
+        )
+        df["CreatedAt"] = pd.to_datetime(
+            df["CreatedAt"], errors="coerce", utc=True, infer_datetime_format=True
+        )
+        # Fallback: if CreatedAt missing, use Timestamp
+        df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
+        if df["CreatedAt"].isna().any():
+            logging.warning("Rows with invalid CreatedAt detected")
+            st.warning("Some entries have invalid timestamps")
+        df = df.dropna(subset=["CreatedAt"])
+        df["Category"] = df["Category"].astype(str).str.lower().str.strip()
+        df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
+        df["Priority"] = df.get("Priority", "").astype(str).str.strip()
+        df["Device"] = df.get("Device", "").astype(str).str.strip()
+        return sheet_ref, df
+    except HttpError as e:
+        if e.resp.status in [429, 503] and _attempt < 3:
+            time.sleep(2 ** _attempt)  # Exponential backoff
+            return load_sheet_data(_attempt=_attempt + 1)
+        else:
+            raise Exception(f"Failed to load sheet after {_attempt + 1} attempts: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Failed to load sheet: {str(e)}")
+
 # OpenAI connectivity
 try:
     client = OpenAI(api_key=openai_api_key)
@@ -56,52 +114,8 @@ except Exception as e:
     st.error("Failed to connect to OpenAI.")
     st.exception(e)
 
-# Google Sheets connectivity
-def load_sheet_data():
-    sheet_ref = gs_client.open("Clarity Capture Log").sheet1
-    values = sheet_ref.get_all_values()
-    header = [h.strip() for h in values[0]]
-
-    # Ensure all expected columns exist
-    required_columns = ["CreatedAt", "Status", "Priority", "Device"]
-    for col in required_columns:
-        if col not in header:
-            header.append(col)
-            sheet_ref.resize(rows=len(values), cols=len(header))
-
-    data = []
-    for row in values[1:]:
-        padded_row = row + [""] * (len(header) - len(row))
-        record = dict(zip(header, padded_row))
-        data.append(record)
-
-    df = pd.DataFrame(data)
-    df.columns = df.columns.str.strip()
-    df["Timestamp"] = pd.to_datetime(
-        df["Timestamp"], errors="coerce", utc=True, infer_datetime_format=True
-    )
-    df["CreatedAt"] = pd.to_datetime(
-        df["CreatedAt"], errors="coerce", utc=True, infer_datetime_format=True
-    )
-    # Fallback: if CreatedAt missing, use Timestamp
-    df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
-    df = df.dropna(subset=["CreatedAt"])
-    df["Category"] = df["Category"].astype(str).str.lower().str.strip()
-    df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
-    df["Priority"] = df.get("Priority", "").astype(str).str.strip()
-    df["Device"] = df.get("Device", "").astype(str).str.strip()
-    return sheet_ref, df
-
 # Connect to Google Sheets
 try:
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads(os.getenv("GOOGLE_SERVICE_KEY")), scope
-    )
-    gs_client = gspread.authorize(creds)
     sheet, df = load_sheet_data()
     sheet_ok = True
 except Exception as e:
@@ -140,9 +154,13 @@ def render_category_form(category):
                     }
                     # Post to webhook
                     try:
-                        requests.post(webhook_url, json=entry)
+                        response = requests.post(webhook_url, json=entry)
+                        if response.status_code != 200:
+                            st.error(f"Webhook failed: {response.text}")
+                            logging.error(f"Webhook error: {response.text}")
                     except Exception as e:
-                        logging.warning(e)
+                        st.error(f"Webhook error: {str(e)}")
+                        logging.error(f"Webhook exception: {str(e)}")
                     # Post to calendar webhook
                     cal_payload = {
                         "start": start,
@@ -154,12 +172,14 @@ def render_category_form(category):
                     try:
                         requests.post(calendar_webhook_url, json=cal_payload)
                     except Exception as e:
-                        logging.warning(e)
+                        logging.warning(f"Calendar webhook error: {str(e)}")
                 st.success(f"Logged {len(lines)} insight(s)")
-                time.sleep(3)  # Wait for webhook to finish
-                global sheet, df
-                sheet, df = load_sheet_data()
-                st.write("Latest entries:", df.tail(5))
+                st.cache_data.clear()  # Clear cache to force refresh
+                time.sleep(5)  # Wait for webhook to process
+                sheet_new, df_new = load_sheet_data()
+                st.write("Latest entries:", df_new.tail(5))
+                return sheet_new, df_new  # Return updated sheet and df
+    return sheet, df  # Return unchanged sheet and df if no submission
 
 # Main App Tabs
 if openai_ok and sheet_ok:
@@ -184,7 +204,7 @@ if openai_ok and sheet_ok:
             "misc",
         ]
         for category in categories:
-            render_category_form(category)
+            sheet, df = render_category_form(category)  # Update sheet and df
 
     # Recall Insights
     with tabs[1]:

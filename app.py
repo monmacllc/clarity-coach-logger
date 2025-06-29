@@ -26,6 +26,12 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
+# Initialize session state for DataFrame and sheet
+if 'sheet' not in st.session_state:
+    st.session_state.sheet = None
+if 'df' not in st.session_state:
+    st.session_state.df = None
+
 # Safe date parsing helper
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
@@ -84,11 +90,20 @@ def load_sheet_data(_attempt=0):
         df["CreatedAt"] = pd.to_datetime(
             df["CreatedAt"], errors="coerce", utc=True, infer_datetime_format=True
         )
-        # Fallback: if CreatedAt missing, use Timestamp
-        df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
+        # Fallback: if CreatedAt missing, use Timestamp or current time
+        now = pd.Timestamp.now(tz='UTC')
+        df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"]).fillna(now)
+        # Filter out far-future dates
+        max_valid_date = now + pd.Timedelta(days=730)  # 2 years from now
+        invalid_dates = df["CreatedAt"] > max_valid_date
+        if invalid_dates.any():
+            logging.warning(f"Found {invalid_dates.sum()} entries with far-future CreatedAt")
+            st.warning(f"Found {invalid_dates.sum()} entries with invalid timestamps (future dates)")
+            df.loc[invalid_dates, "CreatedAt"] = now  # Reset to current time
         if df["CreatedAt"].isna().any():
             logging.warning("Rows with invalid CreatedAt detected")
             st.warning("Some entries have invalid timestamps")
+            df["CreatedAt"] = df["CreatedAt"].fillna(now)
         df = df.dropna(subset=["CreatedAt"])
         df["Category"] = df["Category"].astype(str).str.lower().str.strip()
         df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
@@ -116,7 +131,7 @@ except Exception as e:
 
 # Connect to Google Sheets
 try:
-    sheet, df = load_sheet_data()
+    st.session_state.sheet, st.session_state.df = load_sheet_data()
     sheet_ok = True
 except Exception as e:
     sheet_ok = False
@@ -174,12 +189,19 @@ def render_category_form(category):
                     except Exception as e:
                         logging.warning(f"Calendar webhook error: {str(e)}")
                 st.success(f"Logged {len(lines)} insight(s)")
-                st.cache_data.clear()  # Clear cache to force refresh
-                time.sleep(5)  # Wait for webhook to process
-                sheet_new, df_new = load_sheet_data()
-                st.write("Latest entries:", df_new.tail(5))
-                return sheet_new, df_new  # Return updated sheet and df
-    return sheet, df  # Return unchanged sheet and df if no submission
+                st.cache_data.clear()  # Clear cache
+                # Retry fetching data to ensure new entry appears
+                for attempt in range(3):
+                    time.sleep(8)  # Increased wait time
+                    sheet_new, df_new = load_sheet_data()
+                    if df_new["Insight"].str.contains(line, case=False, na=False).any():
+                        st.session_state.sheet, st.session_state.df = sheet_new, df_new
+                        break
+                else:
+                    st.warning("New entry not found in sheet after retries")
+                st.write("Latest entries:", st.session_state.df.tail(5))
+                return st.session_state.sheet, st.session_state.df
+    return st.session_state.sheet, st.session_state.df
 
 # Main App Tabs
 if openai_ok and sheet_ok:
@@ -204,7 +226,7 @@ if openai_ok and sheet_ok:
             "misc",
         ]
         for category in categories:
-            sheet, df = render_category_form(category)  # Update sheet and df
+            st.session_state.sheet, st.session_state.df = render_category_form(category)
 
     # Recall Insights
     with tabs[1]:
@@ -212,11 +234,11 @@ if openai_ok and sheet_ok:
         selected = st.multiselect(
             "Categories", options=categories, default=categories
         )
-        num_entries = st.slider("Entries to display", 5, 200, 50)
+        num_entries = st.slider("Entries to display", 5, 200, 100)  # Increased default
         show_completed = st.sidebar.checkbox("Show Completed", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
-        sorted_df = df.sort_values(by="CreatedAt", ascending=False).copy()
+        sorted_df = st.session_state.df.sort_values(by="CreatedAt", ascending=False).copy()
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
         ]
@@ -228,7 +250,10 @@ if openai_ok and sheet_ok:
 
         if debug_mode:
             st.subheader("🚨 Debug Data")
-            st.dataframe(display_df)
+            st.write("Raw DataFrame:", st.session_state.df)
+            st.write("Sorted DataFrame:", sorted_df.head(num_entries))
+            st.write("Filtered DataFrame:", display_df)
+            st.write("Latest 5 entries:", st.session_state.df.tail(5))
 
         for idx, row in display_df.iterrows():
             col1, col2 = st.columns([0.85, 0.15])
@@ -244,18 +269,24 @@ if openai_ok and sheet_ok:
                 )
 
             if marked and row["Status"] != "Complete":
-                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
+                row_index = st.session_state.df[st.session_state.df["Insight"] == row["Insight"]].index[0] + 2
+                st.session_state.sheet.update_cell(row_index, st.session_state.df.columns.get_loc("Status") + 1, "Complete")
                 st.success("Marked as complete")
+                st.cache_data.clear()
+                st.session_state.sheet, st.session_state.df = load_sheet_data()
 
             if starred and row["Priority"].lower() != "yes":
-                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "Yes")
+                row_index = st.session_state.df[st.session_state.df["Insight"] == row["Insight"]].index[0] + 2
+                st.session_state.sheet.update_cell(row_index, st.session_state.df.columns.get_loc("Priority") + 1, "Yes")
                 st.info("Starred")
+                st.cache_data.clear()
+                st.session_state.sheet, st.session_state.df = load_sheet_data()
             elif not starred and row["Priority"].lower() == "yes":
-                row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
+                row_index = st.session_state.df[st.session_state.df["Insight"] == row["Insight"]].index[0] + 2
+                st.session_state.sheet.update_cell(row_index, st.session_state.df.columns.get_loc("Priority") + 1, "")
                 st.info("Unstarred")
+                st.cache_data.clear()
+                st.session_state.sheet, st.session_state.df = load_sheet_data()
 
     # Clarity Chat
     with tabs[2]:

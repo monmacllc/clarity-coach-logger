@@ -16,7 +16,7 @@ import time
 # Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
-# Timezone for display
+# Timezone
 local_tz = pytz.timezone("US/Pacific")
 
 # API Keys and Webhooks
@@ -32,19 +32,15 @@ def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
     now = datetime.now(pytz.utc)
-
     if not matches:
         return (
             now.isoformat(timespec="microseconds"),
             (now + timedelta(hours=1)).isoformat(timespec="microseconds"),
             None,
         )
-
     start = matches[0][1]
-
     if start.year < 1900 or start.year > 2100:
         start = now
-
     end = start + timedelta(hours=1)
     return (
         start.isoformat(timespec="microseconds"),
@@ -292,7 +288,9 @@ if openai_ok and sheet_ok:
     # Clarity Chat Tab
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
-        chat = st.text_area("Ask Clarity Coach:")
+
+        chat = st.text_area("Ask Clarity Coach what to focus on:")
+
         if st.button("Ask"):
             if chat.strip():
                 resp = client.chat.completions.create(
@@ -300,9 +298,30 @@ if openai_ok and sheet_ok:
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are a clarity coach helping users improve their personal and professional life.",
+                            "content": (
+                                "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
+                                "You are trained in elite human psychology, decision coaching, and behavior design. "
+                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
+                                "You cut through distractions, doubts, or emotional spirals quickly. "
+                                "You constantly re-anchor the user to their millionaire goal and identity. "
+                                "You help the user break big goals into daily tactical moves. "
+                                "You ask sharp, smart questions that help the user unlock stuck thinking. "
+                                "You provide weekly reviews and structured mindset coaching. "
+                                "You operate through five key functions: "
+                                "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
+                                "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
+                                "3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur. "
+                                "4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action. "
+                                "5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections. "
+                                "Whenever helpful, respond using frameworks, checklists, or pointed questions. "
+                                "Avoid comfort or vague encouragement unless explicitly requested. "
+                                "Challenge by default. Clarity over complexity. Forward momentum over overthinking. "
+                                "Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to. "
+                                "Provide specific recommendations and rationale."
+                            )
                         },
                         {"role": "user", "content": chat},
                     ],
+                    temperature=0.2
                 )
                 st.write(resp.choices[0].message.content)

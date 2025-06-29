@@ -384,7 +384,7 @@ Provide specific recommendations and rationale.
             if chat.strip():
                 run_clarity_chat(chat)
 
-            # Insights Dashboard Tab
+        # Insights Dashboard Tab
     with tabs[3]:
         try:
             st.title("📊 Insights Dashboard")
@@ -536,7 +536,29 @@ Provide specific recommendations and rationale.
 
                 st.altair_chart(chart, use_container_width=True)
 
+            # --- PIE CHART ---
+            st.markdown("### Overall Status Distribution")
+
+            # Aggregate overall counts
+            overall_status_counts = (
+                df.groupby("Status")
+                .size()
+                .reset_index(name="Count")
+            )
+
+            if overall_status_counts["Count"].sum() == 0:
+                st.info("No entries to display in the pie chart.")
+            else:
+                pie = alt.Chart(overall_status_counts).mark_arc(innerRadius=50).encode(
+                    theta=alt.Theta(field="Count", type="quantitative"),
+                    color=alt.Color(field="Status", type="nominal"),
+                    tooltip=["Status", "Count"]
+                ).properties(height=400)
+
+                st.altair_chart(pie, use_container_width=True)
+
         except Exception as e:
             st.error("⚠️ An error occurred while rendering the Insights Dashboard.")
             st.exception(e)
+
 

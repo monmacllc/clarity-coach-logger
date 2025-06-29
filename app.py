@@ -386,90 +386,64 @@ Provide specific recommendations and rationale.
 
 
 
-    # Insights Dashboard Tab
+        # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
-        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-        df["Week"] = df["CreatedAt"].dt.to_period("W").dt.start_time
-        df["Date"] = df["CreatedAt"].dt.date
-
         st.markdown("### Entries by Week")
+
+        # Slider to pick how many days back
+        days_back = st.slider("Show data from the past N days:", 7, 30, 14)
+
+        # Prepare date filtering
+        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
+        df_filtered = df[df["CreatedAt"] >= pd.Timestamp.utcnow() - pd.Timedelta(days=days_back)]
+
+        # Determine the start of each week (Monday)
+        df_filtered["WeekStart"] = df_filtered["CreatedAt"].dt.to_period("W").apply(lambda r: r.start_time)
+
+        # Create human-readable labels for each week bucket
+        df_filtered["WeekBucket"] = (pd.Timestamp.utcnow() - df_filtered["WeekStart"]).apply(
+            lambda delta: (
+                "Current Week" if delta <= pd.Timedelta(days=7) else
+                "Last Week" if delta <= pd.Timedelta(days=14) else
+                "2 Weeks Ago" if delta <= pd.Timedelta(days=21) else
+                "3 Weeks Ago" if delta <= pd.Timedelta(days=28) else
+                "4 Weeks Ago"
+            )
+        )
+
+        # Standardize status
+        df_filtered["Status"] = df_filtered["Status"].str.strip().str.capitalize()
+
+        # Aggregate counts
         entries_per_week = (
-            df.groupby(["Week", "Status"])
+            df_filtered.groupby(["WeekBucket", "Status"])
             .size()
             .reset_index(name="Count")
-            .sort_values("Week")
         )
+
+        # Ensure weeks show in order
+        week_order = ["4 Weeks Ago", "3 Weeks Ago", "2 Weeks Ago", "Last Week", "Current Week"]
+        entries_per_week["WeekBucket"] = pd.Categorical(entries_per_week["WeekBucket"], categories=week_order, ordered=True)
+        entries_per_week = entries_per_week.sort_values("WeekBucket")
 
         if entries_per_week.empty:
             st.info("No entries to display.")
         else:
-            chart1 = (
+            import altair as alt
+
+            chart = (
                 alt.Chart(entries_per_week)
                 .mark_bar()
                 .encode(
-                    x=alt.X("Week:T", title="Week"),
-                    y=alt.Y("Count:Q", title="Entries"),
+                    x=alt.X("WeekBucket:N", title="Week"),
+                    y=alt.Y("Count:Q", title="Number of Entries"),
                     color=alt.Color("Status:N"),
-                    tooltip=["Week", "Status", "Count"]
+                    tooltip=["WeekBucket", "Status", "Count"]
                 )
-                .properties(height=300)
+                .properties(height=400)
             )
-            st.altair_chart(chart1, use_container_width=True)
+            st.altair_chart(chart, use_container_width=True)
 
-        st.markdown("### Entries by Category")
-        entries_by_category = (
-            df.groupby("Category")
-            .size()
-            .reset_index(name="Count")
-            .sort_values("Count", ascending=False)
-        )
-
-        if entries_by_category.empty:
-            st.info("No entries to display.")
-        else:
-            chart2 = (
-                alt.Chart(entries_by_category)
-                .mark_arc(innerRadius=50)
-                .encode(
-                    theta=alt.Theta("Count:Q"),
-                    color=alt.Color("Category:N"),
-                    tooltip=["Category", "Count"]
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(chart2, use_container_width=True)
-
-        st.markdown("### Completion Rate Over Time")
-        df["IsComplete"] = df["Status"].str.lower() == "complete"
-        completion_by_day = (
-            df.groupby("Date")
-            .agg(
-                Total=("IsComplete", "size"),
-                Completed=("IsComplete", "sum")
-            )
-            .reset_index()
-        )
-        completion_by_day["CompletionRate"] = (
-            completion_by_day["Completed"] / completion_by_day["Total"]
-        )
-
-        if completion_by_day.empty:
-            st.info("No data to calculate completion rates.")
-        else:
-            chart3 = (
-                alt.Chart(completion_by_day)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X("Date:T"),
-                    y=alt.Y("CompletionRate:Q"),
-                    tooltip=[
-                        alt.Tooltip("Date:T"),
-                        alt.Tooltip("CompletionRate:Q", format=".0%")
-                    ]
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(chart3, use_container_width=True)
 

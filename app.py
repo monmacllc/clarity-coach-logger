@@ -390,49 +390,49 @@ Provide specific recommendations and rationale.
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
-        st.markdown("### Entries by Rolling Timeframe")
+        st.markdown("### Entries by Disjoint Timeframes")
 
-        # Prepare date filtering
+        # Prepare dates
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df_filtered = df.copy()
 
-        # Calculate how many days ago each entry was created
+        # Calculate how many days ago
         df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(
             lambda d: (pd.Timestamp.utcnow() - d).days
         )
 
-        # Define buckets
-        buckets = [
-            ("Last 7 Days", 7),
-            ("Last 14 Days", 14),
-            ("Last 21 Days", 21),
-            ("Last 30 Days", 30),
-        ]
+        # Assign to exactly one bucket
+        def bucket_label(days_ago):
+            if days_ago <= 7:
+                return "Last 7 Days"
+            elif days_ago <= 14:
+                return "Last 14 Days"
+            elif days_ago <= 21:
+                return "Last 21 Days"
+            elif days_ago <= 30:
+                return "Last 30 Days"
+            else:
+                return None
 
-        # Build long-format dataframe: 1 row per bucket per entry
-        records = []
-        for _, row in df_filtered.iterrows():
-            for bucket_label, day_limit in buckets:
-                if row["DaysAgo"] <= day_limit:
-                    records.append({
-                        "Timeframe": bucket_label,
-                        "Status": row["Status"].strip().capitalize()
-                    })
+        df_filtered["Timeframe"] = df_filtered["DaysAgo"].apply(bucket_label)
 
-        df_buckets = pd.DataFrame(records)
+        # Drop rows outside 30 days
+        df_filtered = df_filtered[df_filtered["Timeframe"].notnull()]
 
-        # Ensure all combinations exist for zero counts
-        all_timeframes = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
-        all_statuses = ["Complete", "Incomplete"]
+        # Clean up status labels
+        df_filtered["Status"] = df_filtered["Status"].str.strip().str.capitalize()
 
         # Aggregate counts
         entries_per_timeframe = (
-            df_buckets.groupby(["Timeframe", "Status"])
+            df_filtered.groupby(["Timeframe", "Status"])
             .size()
             .reset_index(name="Count")
         )
 
-        # Create MultiIndex to reindex and fill missing combinations with 0
+        # Ensure all combinations exist
+        all_timeframes = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
+        all_statuses = ["Complete", "Incomplete"]
+
         idx = pd.MultiIndex.from_product(
             [all_timeframes, all_statuses],
             names=["Timeframe", "Status"]
@@ -444,15 +444,15 @@ Provide specific recommendations and rationale.
             .reset_index()
         )
 
-        # Checkboxes for selecting which timeframes to display
-        st.markdown("**Select Additional Timeframes to Display:**")
+        # Checkboxes to select which timeframes to show counts
+        st.markdown("**Select Timeframes to Display:**")
         col1, col2, col3 = st.columns(3)
 
-        show_14 = col1.checkbox("Include Last 14 Days")
-        show_21 = col2.checkbox("Include Last 21 Days")
-        show_30 = col3.checkbox("Include Last 30 Days")
+        show_14 = col1.checkbox("Include Last 14 Days (8–14d)")
+        show_21 = col2.checkbox("Include Last 21 Days (15–21d)")
+        show_30 = col3.checkbox("Include Last 30 Days (22–30d)")
 
-        # Build list of selected timeframes
+        # Build list of selected buckets (Last 7 Days always included)
         selected_buckets = ["Last 7 Days"]
         if show_14:
             selected_buckets.append("Last 14 Days")
@@ -461,15 +461,14 @@ Provide specific recommendations and rationale.
         if show_30:
             selected_buckets.append("Last 30 Days")
 
-        # Add Show flag to mask counts for deselected timeframes
+        # Mask counts for deselected buckets
         entries_per_timeframe["Show"] = entries_per_timeframe["Timeframe"].isin(selected_buckets)
-
-        # DisplayCount column: 0 if not selected
         entries_per_timeframe["DisplayCount"] = entries_per_timeframe.apply(
-            lambda row: row["Count"] if row["Show"] else 0, axis=1
+            lambda row: row["Count"] if row["Show"] else 0,
+            axis=1
         )
 
-        # Force Timeframe order
+        # Force order
         entries_per_timeframe["Timeframe"] = pd.Categorical(
             entries_per_timeframe["Timeframe"],
             categories=all_timeframes,
@@ -491,6 +490,9 @@ Provide specific recommendations and rationale.
                     tooltip=["Timeframe", "Status", "DisplayCount"]
                 )
                 .properties(height=400)
+            )
+            st.altair_chart(chart, use_container_width=True)
+
             )
             st.altair_chart(chart, use_container_width=True)
 

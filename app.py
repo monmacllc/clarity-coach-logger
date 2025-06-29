@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 import json
@@ -98,7 +97,7 @@ def load_sheet_data(_attempt=0):
         max_valid_date = now + pd.Timedelta(days=730)  # 2 years from now
         invalid_dates = df["CreatedAt"] > max_valid_date
         if invalid_dates.any():
-            logging.warning(f"Found {invalid_dates.sum()} entries with far-future CreatedAt")
+            logging.warning(f"Found {invalid_dates.sum()} entries with far-future CreatedAt: {df[invalid_dates][['Insight', 'CreatedAt']].to_dict()}")
             st.warning(f"Found {invalid_dates.sum()} entries with invalid timestamps (future dates)")
             df.loc[invalid_dates, "CreatedAt"] = now  # Reset to current time
         if df["CreatedAt"].isna().any():
@@ -170,7 +169,7 @@ def render_category_form(category):
                     }
                     # Post to webhook
                     try:
-                        response = requests.post(webhook_url, json=entry)
+                        response = requests.post(webhook_url, json=entry, timeout=10)
                         if response.status_code != 200:
                             st.error(f"Webhook failed: {response.text}")
                             logging.error(f"Webhook error: {response.text}")
@@ -186,21 +185,23 @@ def render_category_form(category):
                         "source": "Clarity Coach",
                     }
                     try:
-                        requests.post(calendar_webhook_url, json=cal_payload)
+                        requests.post(calendar_webhook_url, json=cal_payload, timeout=10)
                     except Exception as e:
                         logging.warning(f"Calendar webhook error: {str(e)}")
-                st musk
                 st.success(f"Logged {len(lines)} insight(s)")
                 st.cache_data.clear()  # Clear cache
                 # Retry fetching data to ensure new entry appears
-                for attempt in range(3):
-                    time.sleep(8)  # Increased wait time
+                max_retries = 4
+                wait_time = 10  # Increased wait time
+                for attempt in range(max_retries):
+                    time.sleep(wait_time)
                     sheet_new, df_new = load_sheet_data()
                     if df_new["Insight"].str.contains(line, case=False, na=False).any():
                         st.session_state.sheet, st.session_state.df = sheet_new, df_new
                         break
                 else:
-                    st.warning("New entry not found in sheet after retries")
+                    st.warning(f"New entry '{line}' not found in sheet after {max_retries} retries")
+                    logging.warning(f"Entry '{line}' not found after {max_retries} retries")
                 st.write("Latest entries:", st.session_state.df.tail(5))
                 return st.session_state.sheet, st.session_state.df
     return st.session_state.sheet, st.session_state.df
@@ -233,14 +234,25 @@ if openai_ok and sheet_ok:
     # Recall Insights
     with tabs[1]:
         st.title("Recall Insights")
+        if st.button("Refresh Data"):
+            st.cache_data.clear()
+            st.session_state.sheet, st.session_state.df = load_sheet_data()
+            st.success("Data refreshed")
         selected = st.multiselect(
             "Categories", options=categories, default=categories
         )
-        num_entries = st.slider("Entries to display", 5, 200, 100)  # Increased default
+        num_entries = st.slider("Entries to display", 5, 500, 200)  # Increased default
         show_completed = st.sidebar.checkbox("Show Completed", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
 
-        sorted_df = st.session_state.df.sort_values(by="CreatedAt", ascending=False).copy()
+        # Try sorting by CreatedAt, fallback to Timestamp if problematic
+        try:
+            sorted_df = st.session_state.df.sort_values(by="CreatedAt", ascending=False).copy()
+        except Exception as e:
+            logging.warning(f"Error sorting by CreatedAt: {str(e)}. Falling back to Timestamp")
+            st.warning("Issue with CreatedAt sorting, using Timestamp instead")
+            sorted_df = st.session_state.df.sort_values(by="Timestamp", ascending=False).copy()
+
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
         ]
@@ -256,12 +268,16 @@ if openai_ok and sheet_ok:
             st.write("Sorted DataFrame:", sorted_df.head(num_entries))
             st.write("Filtered DataFrame:", display_df)
             st.write("Latest 5 entries:", st.session_state.df.tail(5))
+            # Show entries with recent CreatedAt for debugging
+            recent_entries = st.session_state.df[st.session_state.df["CreatedAt"] > pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=7)]
+            st.write("Entries from last 7 days:", recent_entries)
 
         for idx, row in display_df.iterrows():
             col1, col2 = st.columns([0.85, 0.15])
             with col1:
+                timestamp_str = row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S') if pd.notna(row['Timestamp']) else "Unknown"
                 marked = st.checkbox(
-                    f"{row['Insight']} ({row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S')})",
+                    f"{row['Insight']} ({timestamp_str})",
                     key=f"check_{idx}",
                     value=row["Status"] == "Complete",
                 )
@@ -307,4 +323,3 @@ if openai_ok and sheet_ok:
                     ],
                 )
                 st.write(resp.choices[0].message.content)
-```

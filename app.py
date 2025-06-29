@@ -386,94 +386,95 @@ Provide specific recommendations and rationale.
 
 
 
-        # Insights Dashboard Tab
+            # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
-        st.markdown("### Entries by Week")
+        st.markdown("### Entries by Rolling Timeframe")
 
         # Prepare date filtering
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df_filtered = df.copy()
 
-        # Determine the start of each week (Monday)
-        df_filtered["WeekStart"] = df_filtered["CreatedAt"].dt.to_period("W").apply(lambda r: r.start_time)
-        df_filtered["WeekStart"] = pd.to_datetime(df_filtered["WeekStart"], utc=True)
+        # Calculate how many days ago
+        df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(lambda d: (pd.Timestamp.utcnow() - d).days)
 
-        # Calculate how many days ago the week started
-        df_filtered["DaysAgo"] = df_filtered["WeekStart"].apply(lambda d: (pd.Timestamp.utcnow() - d).days)
+        # Build long-format dataframe with one row per timeframe bucket per entry
+        buckets = [
+            ("Last 7 Days", 7),
+            ("Last 14 Days", 14),
+            ("Last 21 Days", 21),
+            ("Last 30 Days", 30),
+        ]
 
-        # Create human-readable week buckets
-        def bucket_label(days_ago):
-            if days_ago <= 7:
-                return "Current Week"
-            elif days_ago <= 14:
-                return "Last Week"
-            elif days_ago <= 21:
-                return "2 Weeks Ago"
-            elif days_ago <= 28:
-                return "3 Weeks Ago"
-            else:
-                return "4+ Weeks Ago"
+        # Collect entries for all applicable buckets
+        records = []
+        for _, row in df_filtered.iterrows():
+            for bucket_label, day_limit in buckets:
+                if row["DaysAgo"] <= day_limit:
+                    records.append({
+                        "Timeframe": bucket_label,
+                        "Status": row["Status"].strip().capitalize()
+                    })
 
-        df_filtered["WeekBucket"] = df_filtered["DaysAgo"].apply(bucket_label)
+        df_buckets = pd.DataFrame(records)
 
-        # Checkboxes for cumulative selection
-        st.markdown("**Select Additional Weeks to Display:**")
+        # Checkboxes to filter which timeframes to display
+        st.markdown("**Select Timeframes to Display:**")
         col1, col2, col3 = st.columns(3)
 
-        show_last = col1.checkbox("Last Week")
-        show_2wk = col2.checkbox("2 Weeks Ago")
-        show_3wk = col3.checkbox("3 Weeks Ago")
+        show_14 = col1.checkbox("Last 14 Days")
+        show_21 = col2.checkbox("Last 21 Days")
+        show_30 = col3.checkbox("Last 30 Days")
 
-        # Build cumulative list of selected buckets
-        selected_weeks = ["Current Week"]
-
-        if show_last:
-            selected_weeks.append("Last Week")
-        if show_2wk:
-            selected_weeks.extend(["Last Week", "2 Weeks Ago"])
-        if show_3wk:
-            selected_weeks.extend(["Last Week", "2 Weeks Ago", "3 Weeks Ago"])
-
-        # Deduplicate (in case of multiple adds)
-        selected_weeks = list(dict.fromkeys(selected_weeks))
-
-        # Standardize status
-        df_filtered["Status"] = df_filtered["Status"].str.strip().str.capitalize()
+        # Build list of selected buckets
+        selected_buckets = ["Last 7 Days"]
+        if show_14:
+            selected_buckets.append("Last 14 Days")
+        if show_21:
+            selected_buckets.append("Last 21 Days")
+        if show_30:
+            selected_buckets.append("Last 30 Days")
 
         # Aggregate counts
-        entries_per_week = (
-            df_filtered.groupby(["WeekBucket", "Status"])
+        entries_per_timeframe = (
+            df_buckets.groupby(["Timeframe", "Status"])
             .size()
             .reset_index(name="Count")
         )
 
-        # Ensure weeks show in order
-        week_order = ["3 Weeks Ago", "2 Weeks Ago", "Last Week", "Current Week"]
-        entries_per_week["WeekBucket"] = pd.Categorical(entries_per_week["WeekBucket"], categories=week_order, ordered=True)
-        entries_per_week = entries_per_week.sort_values("WeekBucket")
+        # Ensure order
+        timeframe_order = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
+        entries_per_timeframe["Timeframe"] = pd.Categorical(
+            entries_per_timeframe["Timeframe"],
+            categories=timeframe_order,
+            ordered=True
+        )
+        entries_per_timeframe = entries_per_timeframe.sort_values("Timeframe")
 
-        # Filter based on cumulative selection
-        entries_per_week = entries_per_week[entries_per_week["WeekBucket"].isin(selected_weeks)]
+        # Filter
+        entries_per_timeframe = entries_per_timeframe[
+            entries_per_timeframe["Timeframe"].isin(selected_buckets)
+        ]
 
-        if entries_per_week.empty:
+        if entries_per_timeframe.empty:
             st.info("No entries to display.")
         else:
             import altair as alt
 
             chart = (
-                alt.Chart(entries_per_week)
+                alt.Chart(entries_per_timeframe)
                 .mark_bar()
                 .encode(
-                    x=alt.X("WeekBucket:N", title="Week"),
+                    x=alt.X("Timeframe:N", title="Timeframe"),
                     y=alt.Y("Count:Q", title="Number of Entries"),
                     color=alt.Color("Status:N"),
-                    tooltip=["WeekBucket", "Status", "Count"]
+                    tooltip=["Timeframe", "Status", "Count"]
                 )
                 .properties(height=400)
             )
             st.altair_chart(chart, use_container_width=True)
+
 
 
 

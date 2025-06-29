@@ -233,17 +233,24 @@ if openai_ok and sheet_ok:
             st.dataframe(display_df)
 
         for idx, row in display_df.iterrows():
+            # Skip completed entries if Show Completed is unchecked
+            if not show_completed and row["Status"] == "Complete":
+                continue
+
             created_at_str = (
                 row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
                 if pd.notnull(row["CreatedAt"])
                 else "No Log Time"
             )
 
+            # ✅ Label shows Insight text
+            label_text = row["Insight"]
+
             col1, col2 = st.columns([0.85, 0.15])
 
             with col1:
                 marked = st.checkbox(
-                    "Entry",
+                    label_text,
                     key=f"check_{idx}",
                     value=row["Status"] == "Complete",
                 )

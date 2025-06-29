@@ -14,7 +14,7 @@ import re
 import logging
 import time
 
-# Page Config
+# Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
 # API Keys and Webhooks
@@ -46,7 +46,7 @@ def extract_event_info(text):
         None,
     )
 
-# OpenAI connectivity
+# OpenAI connection
 try:
     client = OpenAI(api_key=openai_api_key)
     client.models.list()
@@ -62,7 +62,6 @@ def load_sheet_data():
     values = sheet_ref.get_all_values()
     header = [h.strip() for h in values[0]]
 
-    # Ensure columns exist
     required_columns = ["CreatedAt", "Status", "Priority", "Device"]
     for col in required_columns:
         if col not in header:
@@ -132,7 +131,7 @@ def render_category_form(category):
                         "device": "Web",
                     }
 
-                    # ✅ Debug print of the payload
+                    # Show debug payload
                     st.write("🚨 Payload being sent to webhook:")
                     st.json(entry)
 
@@ -205,10 +204,21 @@ if openai_ok and sheet_ok:
             st.dataframe(display_df)
 
         for idx, row in display_df.iterrows():
+            timestamp_str = (
+                row["Timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                if pd.notnull(row["Timestamp"])
+                else "No Date"
+            )
+            created_at_str = (
+                row["CreatedAt"].strftime("%Y-%m-%d %H:%M:%S")
+                if pd.notnull(row["CreatedAt"])
+                else "No Log Time"
+            )
+
             col1, col2 = st.columns([0.85, 0.15])
             with col1:
                 marked = st.checkbox(
-                    f"{row['Insight']} ({row['Timestamp'].strftime('%Y-%m-%d %H:%M:%S')})",
+                    f"{row['Insight']} (Event: {timestamp_str}, Logged: {created_at_str})",
                     key=f"check_{idx}",
                     value=row["Status"] == "Complete",
                 )

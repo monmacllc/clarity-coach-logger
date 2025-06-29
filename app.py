@@ -16,7 +16,7 @@ import time
 # Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
-# Timezone
+# Timezone for display
 local_tz = pytz.timezone("US/Pacific")
 
 # API Keys and Webhooks
@@ -27,20 +27,25 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Safe date parsing
+# Date parsing function
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
     now = datetime.now(pytz.utc)
+
     if not matches:
         return (
             now.isoformat(timespec="microseconds"),
             (now + timedelta(hours=1)).isoformat(timespec="microseconds"),
             None,
         )
+
     start = matches[0][1]
-    if start.year > now.year + 2:
+
+    # Reject unreasonable years
+    if start.year < 1900 or start.year > 2100:
         start = now
+
     end = start + timedelta(hours=1)
     return (
         start.isoformat(timespec="microseconds"),
@@ -58,7 +63,7 @@ except Exception as e:
     st.error("OpenAI error")
     st.exception(e)
 
-# Load Google Sheet
+# Load Google Sheets data
 def load_sheet_data():
     sheet_ref = gs_client.open("Clarity Capture Log").sheet1
     values = sheet_ref.get_all_values()
@@ -105,7 +110,7 @@ def load_sheet_data():
     df["Device"] = df.get("Device", "").astype(str).str.strip()
     return sheet_ref, df
 
-# Connect to Sheets
+# Connect to Google Sheets
 try:
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -122,7 +127,7 @@ except Exception as e:
     st.error("Google Sheets error")
     st.exception(e)
 
-# Log form
+# Log form per category
 def render_category_form(category):
     with st.expander(category.upper()):
         with st.form(key=f"form_{category}"):
@@ -176,11 +181,11 @@ def render_category_form(category):
                 sheet, df = load_sheet_data()
                 st.write("Latest entries:", df.tail(5))
 
-# Main Tabs
+# Main tabs
 if openai_ok and sheet_ok:
     tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
 
-    # Log Clarity
+    # Log Clarity Tab
     with tabs[0]:
         st.title("Clarity Coach")
         categories = [
@@ -201,10 +206,9 @@ if openai_ok and sheet_ok:
         for category in categories:
             render_category_form(category)
 
-    # Recall Insights
+    # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
-
         selected = st.multiselect("Categories", options=categories, default=categories)
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", True)
@@ -269,7 +273,7 @@ if openai_ok and sheet_ok:
                 sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                 st.info("Unstarred")
 
-    # Clarity Chat
+    # Clarity Chat Tab
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
         chat = st.text_area("Ask Clarity Coach:")

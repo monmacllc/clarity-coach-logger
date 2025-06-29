@@ -466,6 +466,11 @@ Provide specific recommendations and rationale.
             axis=1
         )
 
+        # Precompute dy offsets
+        entries_per_timeframe["dy_value"] = entries_per_timeframe["DisplayCount"].apply(
+            lambda x: -10 if x < 10 else 5
+        )
+
         # Force order
         entries_per_timeframe["Timeframe"] = pd.Categorical(
             entries_per_timeframe["Timeframe"],
@@ -503,17 +508,13 @@ Provide specific recommendations and rationale.
             # Bar layer
             bars = base.mark_bar()
 
-            # Text labels with conditional placement
+            # Text labels with precomputed dy
             text = base.mark_text(
                 align="center",
                 dx=0
             ).encode(
                 text="DisplayCount:Q",
-                dy=alt.condition(
-                    alt.datum.DisplayCount < 10,
-                    alt.value(-10),  # Above bar if <10
-                    alt.value(5)     # Inside bar if ≥10
-                ),
+                dy="dy_value:Q",
                 color=alt.value("black")
             )
 
@@ -521,3 +522,4 @@ Provide specific recommendations and rationale.
             chart = (bars + text).properties(height=400)
 
             st.altair_chart(chart, use_container_width=True)
+

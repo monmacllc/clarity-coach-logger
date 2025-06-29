@@ -376,10 +376,35 @@ if openai_ok and sheet_ok:
         else:
             st.info("No entries to analyze.")
 
-    # Clarity Chat Tab
+       # Clarity Chat Tab
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
-        chat = st.text_area("Ask Clarity Coach any question:")
+
+        st.markdown("**💡 Quick Prompts:**")
+        col1, col2, col3 = st.columns(3)
+        preset_text = ""
+
+        if col1.button("What are the top 3 moves I need to make today?"):
+            preset_text = "What are the top 3 moves I need to make today?"
+
+        if col2.button("I'm stuck—help me refocus fast."):
+            preset_text = "I'm stuck—help me refocus fast."
+
+        if col3.button("What’s the clearest way to reach my income goal?"):
+            preset_text = "What’s the clearest way to reach my income goal?"
+
+        # Keep text in session state so user can edit after clicking
+        if "chat_input" not in st.session_state:
+            st.session_state.chat_input = ""
+
+        if preset_text:
+            st.session_state.chat_input = preset_text
+
+        chat = st.text_area(
+            "Ask Clarity Coach any question:",
+            value=st.session_state.chat_input,
+            key="chat_input_area"
+        )
 
         if st.button("Ask"):
             if chat.strip():
@@ -415,6 +440,7 @@ if openai_ok and sheet_ok:
                     temperature=0.2
                 )
                 st.write(resp.choices[0].message.content)
+
 
     # Insights Dashboard Tab
     with tabs[3]:

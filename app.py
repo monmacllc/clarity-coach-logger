@@ -386,7 +386,7 @@ Provide specific recommendations and rationale.
 
 
 
-                # Insights Dashboard Tab
+            # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
@@ -396,8 +396,10 @@ Provide specific recommendations and rationale.
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df_filtered = df.copy()
 
-        # Calculate how many days ago
-        df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(lambda d: (pd.Timestamp.utcnow() - d).days)
+        # Calculate how many days ago each entry was created
+        df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(
+            lambda d: (pd.Timestamp.utcnow() - d).days
+        )
 
         # Define buckets
         buckets = [
@@ -407,7 +409,7 @@ Provide specific recommendations and rationale.
             ("Last 30 Days", 30),
         ]
 
-        # Build long-format dataframe with one row per bucket per entry
+        # Build long-format dataframe: 1 row per bucket per entry
         records = []
         for _, row in df_filtered.iterrows():
             for bucket_label, day_limit in buckets:
@@ -419,7 +421,7 @@ Provide specific recommendations and rationale.
 
         df_buckets = pd.DataFrame(records)
 
-        # Generate all possible combinations to ensure empty buckets are included
+        # Ensure all combinations exist for zero counts
         all_timeframes = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
         all_statuses = ["Complete", "Incomplete"]
 
@@ -430,19 +432,27 @@ Provide specific recommendations and rationale.
             .reset_index(name="Count")
         )
 
-        # Reindex to ensure all combinations exist
-        idx = pd.MultiIndex.from_product([all_timeframes, all_statuses], names=["Timeframe", "Status"])
-        entries_per_timeframe = entries_per_timeframe.set_index(["Timeframe", "Status"]).reindex(idx, fill_value=0).reset_index()
+        # Create MultiIndex to reindex and fill missing combinations with 0
+        idx = pd.MultiIndex.from_product(
+            [all_timeframes, all_statuses],
+            names=["Timeframe", "Status"]
+        )
+        entries_per_timeframe = (
+            entries_per_timeframe
+            .set_index(["Timeframe", "Status"])
+            .reindex(idx, fill_value=0)
+            .reset_index()
+        )
 
-        # Checkboxes to select which timeframes are highlighted
-        st.markdown("**Select Timeframes to Display:**")
+        # Checkboxes for selecting which timeframes to display
+        st.markdown("**Select Additional Timeframes to Display:**")
         col1, col2, col3 = st.columns(3)
 
         show_14 = col1.checkbox("Include Last 14 Days")
         show_21 = col2.checkbox("Include Last 21 Days")
         show_30 = col3.checkbox("Include Last 30 Days")
 
-        # Build the selected buckets (always include Last 7)
+        # Build list of selected timeframes
         selected_buckets = ["Last 7 Days"]
         if show_14:
             selected_buckets.append("Last 14 Days")
@@ -451,15 +461,15 @@ Provide specific recommendations and rationale.
         if show_30:
             selected_buckets.append("Last 30 Days")
 
-        # Add a flag to indicate whether to display actual counts or 0
+        # Add Show flag to mask counts for deselected timeframes
         entries_per_timeframe["Show"] = entries_per_timeframe["Timeframe"].isin(selected_buckets)
 
-        # Mask counts for unselected timeframes
+        # DisplayCount column: 0 if not selected
         entries_per_timeframe["DisplayCount"] = entries_per_timeframe.apply(
             lambda row: row["Count"] if row["Show"] else 0, axis=1
         )
 
-        # Enforce proper order
+        # Force Timeframe order
         entries_per_timeframe["Timeframe"] = pd.Categorical(
             entries_per_timeframe["Timeframe"],
             categories=all_timeframes,
@@ -475,7 +485,7 @@ Provide specific recommendations and rationale.
                 alt.Chart(entries_per_timeframe)
                 .mark_bar()
                 .encode(
-                    x=alt.X("Timeframe:N", title="Timeframe"),
+                    x=alt.X("Timeframe:N", sort=all_timeframes, title="Timeframe"),
                     y=alt.Y("DisplayCount:Q", title="Number of Entries"),
                     color=alt.Color("Status:N"),
                     tooltip=["Timeframe", "Status", "DisplayCount"]
@@ -483,3 +493,4 @@ Provide specific recommendations and rationale.
                 .properties(height=400)
             )
             st.altair_chart(chart, use_container_width=True)
+

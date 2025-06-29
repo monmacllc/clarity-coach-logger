@@ -77,8 +77,20 @@ def load_sheet_data():
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
 
-    # Parse timestamps robustly
-    df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
+    # Robust timestamp parsing
+    def parse_timestamp(value):
+        try:
+            if pd.isnull(value):
+                return pd.NaT
+            if isinstance(value, (float, int)):
+                return pd.to_datetime("1899-12-30") + pd.to_timedelta(value, unit="D")
+            return pd.to_datetime(value, utc=True, errors="coerce")
+        except:
+            return pd.NaT
+
+    df["Timestamp"] = pd.to_numeric(df["Timestamp"], errors="ignore")
+    df["Timestamp"] = df["Timestamp"].apply(parse_timestamp)
+
     df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
     df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
 

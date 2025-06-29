@@ -303,7 +303,7 @@ if openai_ok and sheet_ok:
                     st.info("Unstarred")
 
 
-        # Clarity Chat Tab
+            # Clarity Chat Tab
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
 

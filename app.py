@@ -69,7 +69,6 @@ def load_sheet_data():
     values = sheet_ref.get_all_values()
     header = [h.strip() for h in values[0]]
 
-    # Ensure required columns
     required_columns = ["CreatedAt", "Status", "Priority", "Device", "RowIndex"]
     for col in required_columns:
         if col not in header:
@@ -85,7 +84,6 @@ def load_sheet_data():
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
 
-    # Robust timestamp parsing
     def parse_timestamp(value):
         try:
             if pd.isnull(value):
@@ -130,7 +128,7 @@ except Exception as e:
     st.exception(e)
 
 # Log form per category
-def render_category_form(category):
+def render_category_form(category, clarity_debug):
     with st.expander(category.upper()):
         with st.form(key=f"form_{category}"):
             input_text = st.text_area(f"Insight for {category}", height=100)
@@ -157,8 +155,9 @@ def render_category_form(category):
                         "device": "Web",
                     }
 
-                    st.write("🚨 Payload sent to webhook:")
-                    st.json(entry)
+                    if clarity_debug:
+                        st.write("🚨 Payload sent to webhook:")
+                        st.json(entry)
 
                     try:
                         requests.post(webhook_url, json=entry)
@@ -180,15 +179,17 @@ def render_category_form(category):
                 time.sleep(3)
                 global sheet, df
                 sheet, df = load_sheet_data()
-                st.write("Latest entries:", df.tail(5))
+                if clarity_debug:
+                    st.write("Latest entries:", df.tail(5))
 
 # Main tabs
 if openai_ok and sheet_ok:
-    tabs = st.tabs(["Log Clarity", "Recall Insights", "Clarity Chat"])
+    tabs = st.tabs(["Clarity Log", "Recall Insights", "Clarity Chat"])
 
-    # Log Clarity Tab
+    # Clarity Log Tab
     with tabs[0]:
         st.title("Clarity Coach")
+        clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
         categories = [
             "ccv",
             "traditional real estate",
@@ -205,7 +206,7 @@ if openai_ok and sheet_ok:
             "misc",
         ]
         for category in categories:
-            render_category_form(category)
+            render_category_form(category, clarity_debug)
 
     # Recall Insights Tab
     with tabs[1]:
@@ -214,7 +215,7 @@ if openai_ok and sheet_ok:
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", True)
         show_timestamps = st.sidebar.checkbox("Show Timestamps", False)
-        debug_mode = st.sidebar.checkbox("Debug Mode", False)
+        debug_mode = st.sidebar.checkbox("Recall Insight Debug Mode", False)
 
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
@@ -232,7 +233,6 @@ if openai_ok and sheet_ok:
             st.subheader("🚨 Debug Data")
             st.dataframe(display_df)
 
-        # Loop by category in order
         for category in categories:
             cat_lower = category.lower().strip()
             cat_df = display_df[

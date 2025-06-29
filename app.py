@@ -376,38 +376,16 @@ if openai_ok and sheet_ok:
         else:
             st.info("No entries to analyze.")
 
-       # Clarity Chat Tab
+    # Clarity Chat Tab
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
 
         st.markdown("**💡 Quick Prompts:**")
         col1, col2, col3 = st.columns(3)
-        preset_text = ""
 
+        # Quick prompt buttons with auto-run
         if col1.button("What are the top 3 moves I need to make today?"):
-            preset_text = "What are the top 3 moves I need to make today?"
-
-        if col2.button("I'm stuck—help me refocus fast."):
-            preset_text = "I'm stuck—help me refocus fast."
-
-        if col3.button("What’s the clearest way to reach my income goal?"):
-            preset_text = "What’s the clearest way to reach my income goal?"
-
-        # Keep text in session state so user can edit after clicking
-        if "chat_input" not in st.session_state:
-            st.session_state.chat_input = ""
-
-        if preset_text:
-            st.session_state.chat_input = preset_text
-
-        chat = st.text_area(
-            "Ask Clarity Coach any question:",
-            value=st.session_state.chat_input,
-            key="chat_input_area"
-        )
-
-        if st.button("Ask"):
-            if chat.strip():
+            with st.spinner("Analyzing..."):
                 resp = client.chat.completions.create(
                     model="gpt-4",
                     messages=[
@@ -435,11 +413,107 @@ if openai_ok and sheet_ok:
                                 "Provide specific recommendations and rationale."
                             )
                         },
-                        {"role": "user", "content": chat},
+                        {"role": "user", "content": "What are the top 3 moves I need to make today?"}
                     ],
                     temperature=0.2
                 )
                 st.write(resp.choices[0].message.content)
+
+        if col2.button("I'm stuck—help me refocus fast."):
+            with st.spinner("Analyzing..."):
+                resp = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
+                                "You are trained in elite human psychology, decision coaching, and behavior design. "
+                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
+                                "You cut through distractions, doubts, or emotional spirals quickly. "
+                                "You constantly re-anchor the user to their millionaire goal and identity. "
+                                "You help the user break big goals into daily tactical moves. "
+                                "You ask sharp, smart questions that help the user unlock stuck thinking. "
+                                "You provide weekly reviews and structured mindset coaching. "
+                                "You operate through five key functions: "
+                                "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
+                                "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
+                                "3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur. "
+                                "4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action. "
+                                "5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections. "
+                                "Whenever helpful, respond using frameworks, checklists, or pointed questions. "
+                                "Avoid comfort or vague encouragement unless explicitly requested. "
+                                "Challenge by default. Clarity over complexity. Forward momentum over overthinking. "
+                                "Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to. "
+                                "Provide specific recommendations and rationale."
+                            )
+                        },
+                        {"role": "user", "content": "I'm stuck—help me refocus fast."}
+                    ],
+                    temperature=0.2
+                )
+                st.write(resp.choices[0].message.content)
+
+        if col3.button("What’s the clearest way to reach my income goal?"):
+            with st.spinner("Analyzing..."):
+                resp = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
+                                "You are trained in elite human psychology, decision coaching, and behavior design. "
+                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
+                                "You cut through distractions, doubts, or emotional spirals quickly. "
+                                "You constantly re-anchor the user to their millionaire goal and identity. "
+                                "You help the user break big goals into daily tactical moves. "
+                                "You ask sharp, smart questions that help the user unlock stuck thinking. "
+                                "You provide weekly reviews and structured mindset coaching. "
+                                "You operate through five key functions: "
+                                "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
+                                "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
+                                "3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur. "
+                                "4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action. "
+                                "5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections. "
+                                "Whenever helpful, respond using frameworks, checklists, or pointed questions. "
+                                "Avoid comfort or vague encouragement unless explicitly requested. "
+                                "Challenge by default. Clarity over complexity. Forward momentum over overthinking. "
+                                "Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to. "
+                                "Provide specific recommendations and rationale."
+                            )
+                        },
+                        {"role": "user", "content": "What’s the clearest way to reach my income goal?"}
+                    ],
+                    temperature=0.2
+                )
+                st.write(resp.choices[0].message.content)
+
+        # Manual input remains
+        st.markdown("---")
+        chat = st.text_area("Or ask your own question:")
+
+        if st.button("Ask"):
+            if chat.strip():
+                with st.spinner("Analyzing..."):
+                    resp = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
+                                    "You are trained in elite human psychology, decision coaching, and behavior design. "
+                                    "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
+                                    "You cut through distractions, doubts, or emotional spirals quickly. "
+                                    "You constantly re-anchor the user to their millionaire goal and identity. "
+                                    "You help the user break big goals into daily tactical moves. "
+                                    "You ask sharp, smart questions that help the user unlock stuck thinking. "
+                                    "You provide weekly reviews and structured mindset coaching. "
+                                    "You operate through five key functions: "
+                                    "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
+                                    "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
+
 
 
     # Insights Dashboard Tab

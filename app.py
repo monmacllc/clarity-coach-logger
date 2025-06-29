@@ -237,31 +237,35 @@ if openai_ok and sheet_ok:
             st.dataframe(display_df)
 
         for idx, row in display_df.iterrows():
-            timestamp_str = (
-                row["Timestamp"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
-                if pd.notnull(row["Timestamp"])
-                else (
-                    row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
-                    if pd.notnull(row["CreatedAt"])
-                    else "No Date"
-                )
-            )
+            # If Show Completed is off, skip completed rows
+            if not show_completed and row["Status"] == "Complete":
+                continue
+
             created_at_str = (
                 row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
                 if pd.notnull(row["CreatedAt"])
                 else "No Log Time"
             )
 
+            # Label only shows timestamp if Show Completed is checked
+            if show_completed:
+                label_text = f"Logged: {created_at_str}"
+            else:
+                label_text = "Entry"
+
             col1, col2 = st.columns([0.85, 0.15])
             with col1:
                 marked = st.checkbox(
-                    f"{row['Insight']} (Event: {timestamp_str}, Logged: {created_at_str})",
+                    label_text,
                     key=f"check_{idx}",
                     value=row["Status"] == "Complete",
                 )
+
             with col2:
                 starred = st.checkbox(
-                    "⭐", value=row["Priority"].lower() == "yes", key=f"star_{idx}"
+                    "⭐",
+                    value=row["Priority"].lower() == "yes",
+                    key=f"star_{idx}"
                 )
 
             if marked and row["Status"] != "Complete":

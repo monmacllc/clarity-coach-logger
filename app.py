@@ -10,7 +10,6 @@ import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
-import re
 import logging
 import time
 
@@ -62,6 +61,7 @@ def load_sheet_data():
     values = sheet_ref.get_all_values()
     header = [h.strip() for h in values[0]]
 
+    # Ensure required columns
     required_columns = ["CreatedAt", "Status", "Priority", "Device"]
     for col in required_columns:
         if col not in header:
@@ -76,10 +76,14 @@ def load_sheet_data():
 
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
+
+    # Parse timestamps robustly
     df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
     df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
     df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
+
     df = df.dropna(subset=["CreatedAt"])
+
     df["Category"] = df["Category"].astype(str).str.lower().str.strip()
     df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
     df["Priority"] = df.get("Priority", "").astype(str).str.strip()
@@ -131,8 +135,8 @@ def render_category_form(category):
                         "device": "Web",
                     }
 
-                    # Show debug payload
-                    st.write("🚨 Payload being sent to webhook:")
+                    # Debug payload
+                    st.write("🚨 Payload sent to webhook:")
                     st.json(entry)
 
                     try:
@@ -185,10 +189,15 @@ if openai_ok and sheet_ok:
     # Recall Insights
     with tabs[1]:
         st.title("Recall Insights")
+
         selected = st.multiselect("Categories", options=categories, default=categories)
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", True)
         debug_mode = st.sidebar.checkbox("Debug Mode", False)
+
+        # Force timestamp parsing again here
+        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
         sorted_df = df.sort_values(by="CreatedAt", ascending=False).copy()
         filtered_df = sorted_df[
@@ -207,7 +216,11 @@ if openai_ok and sheet_ok:
             timestamp_str = (
                 row["Timestamp"].strftime("%Y-%m-%d %H:%M:%S")
                 if pd.notnull(row["Timestamp"])
-                else "No Date"
+                else (
+                    row["CreatedAt"].strftime("%Y-%m-%d %H:%M:%S")
+                    if pd.notnull(row["CreatedAt"])
+                    else "No Date"
+                )
             )
             created_at_str = (
                 row["CreatedAt"].strftime("%Y-%m-%d %H:%M:%S")

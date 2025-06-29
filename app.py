@@ -386,7 +386,7 @@ Provide specific recommendations and rationale.
 
 
 
-            # Insights Dashboard Tab
+                # Insights Dashboard Tab
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
@@ -399,7 +399,7 @@ Provide specific recommendations and rationale.
         # Calculate how many days ago
         df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(lambda d: (pd.Timestamp.utcnow() - d).days)
 
-        # Build long-format dataframe with one row per timeframe bucket per entry
+        # Define buckets
         buckets = [
             ("Last 7 Days", 7),
             ("Last 14 Days", 14),
@@ -407,7 +407,7 @@ Provide specific recommendations and rationale.
             ("Last 30 Days", 30),
         ]
 
-        # Collect entries for all applicable buckets
+        # Build long-format dataframe with one row per bucket per entry
         records = []
         for _, row in df_filtered.iterrows():
             for bucket_label, day_limit in buckets:
@@ -419,22 +419,9 @@ Provide specific recommendations and rationale.
 
         df_buckets = pd.DataFrame(records)
 
-        # Checkboxes to filter which timeframes to display
-        st.markdown("**Select Timeframes to Display:**")
-        col1, col2, col3 = st.columns(3)
-
-        show_14 = col1.checkbox("Last 14 Days")
-        show_21 = col2.checkbox("Last 21 Days")
-        show_30 = col3.checkbox("Last 30 Days")
-
-        # Build list of selected buckets
-        selected_buckets = ["Last 7 Days"]
-        if show_14:
-            selected_buckets.append("Last 14 Days")
-        if show_21:
-            selected_buckets.append("Last 21 Days")
-        if show_30:
-            selected_buckets.append("Last 30 Days")
+        # Generate all possible combinations to ensure empty buckets are included
+        all_timeframes = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
+        all_statuses = ["Complete", "Incomplete"]
 
         # Aggregate counts
         entries_per_timeframe = (
@@ -443,21 +430,43 @@ Provide specific recommendations and rationale.
             .reset_index(name="Count")
         )
 
-        # Ensure order
-        timeframe_order = ["Last 7 Days", "Last 14 Days", "Last 21 Days", "Last 30 Days"]
+        # Reindex to ensure all combinations exist
+        idx = pd.MultiIndex.from_product([all_timeframes, all_statuses], names=["Timeframe", "Status"])
+        entries_per_timeframe = entries_per_timeframe.set_index(["Timeframe", "Status"]).reindex(idx, fill_value=0).reset_index()
+
+        # Checkboxes to select which timeframes are highlighted
+        st.markdown("**Select Timeframes to Display:**")
+        col1, col2, col3 = st.columns(3)
+
+        show_14 = col1.checkbox("Include Last 14 Days")
+        show_21 = col2.checkbox("Include Last 21 Days")
+        show_30 = col3.checkbox("Include Last 30 Days")
+
+        # Build the selected buckets (always include Last 7)
+        selected_buckets = ["Last 7 Days"]
+        if show_14:
+            selected_buckets.append("Last 14 Days")
+        if show_21:
+            selected_buckets.append("Last 21 Days")
+        if show_30:
+            selected_buckets.append("Last 30 Days")
+
+        # Add a flag to indicate whether to display actual counts or 0
+        entries_per_timeframe["Show"] = entries_per_timeframe["Timeframe"].isin(selected_buckets)
+
+        # Mask counts for unselected timeframes
+        entries_per_timeframe["DisplayCount"] = entries_per_timeframe.apply(
+            lambda row: row["Count"] if row["Show"] else 0, axis=1
+        )
+
+        # Enforce proper order
         entries_per_timeframe["Timeframe"] = pd.Categorical(
             entries_per_timeframe["Timeframe"],
-            categories=timeframe_order,
+            categories=all_timeframes,
             ordered=True
         )
-        entries_per_timeframe = entries_per_timeframe.sort_values("Timeframe")
 
-        # Filter
-        entries_per_timeframe = entries_per_timeframe[
-            entries_per_timeframe["Timeframe"].isin(selected_buckets)
-        ]
-
-        if entries_per_timeframe.empty:
+        if entries_per_timeframe["DisplayCount"].sum() == 0:
             st.info("No entries to display.")
         else:
             import altair as alt
@@ -467,15 +476,10 @@ Provide specific recommendations and rationale.
                 .mark_bar()
                 .encode(
                     x=alt.X("Timeframe:N", title="Timeframe"),
-                    y=alt.Y("Count:Q", title="Number of Entries"),
+                    y=alt.Y("DisplayCount:Q", title="Number of Entries"),
                     color=alt.Color("Status:N"),
-                    tooltip=["Timeframe", "Status", "Count"]
+                    tooltip=["Timeframe", "Status", "DisplayCount"]
                 )
                 .properties(height=400)
             )
             st.altair_chart(chart, use_container_width=True)
-
-
-
-
-

@@ -209,7 +209,7 @@ if openai_ok and sheet_ok:
         for category in categories:
             render_category_form(category, clarity_debug)
 
-    # Recall Insights Tab
+        # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
         selected = st.multiselect("Categories", options=categories, default=categories)
@@ -302,12 +302,12 @@ if openai_ok and sheet_ok:
                     sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                     st.info("Unstarred")
 
-        # Prepare insights text
-        insights_text = ""
-        for idx, row in display_df.iterrows():
-            insights_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
 
-        # Collect all incomplete/starred entries in last 30 days
+        # Clarity Chat Tab
+    with tabs[2]:
+        st.title("Clarity Chat (AI Coach)")
+
+        # Collect latest Recall Insights context
         cutoff_30 = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
         recent_incomplete = df[
             (df["Status"] != "Complete") &
@@ -319,71 +319,17 @@ if openai_ok and sheet_ok:
         ]
 
         combined_recent = pd.concat([recent_incomplete, recent_starred]).drop_duplicates()
-        combined_recent = combined_recent[~combined_recent["Insight"].isin(display_df["Insight"])]
 
-        recent_text = ""
+        insights_context = ""
         if not combined_recent.empty:
-            recent_text += "Additionally, here are other incomplete or important entries from the last 30 days:\n"
+            insights_context += "Here are my current incomplete or important entries:\n"
             for idx, row in combined_recent.iterrows():
-                recent_text += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
-
-        # Show Clarity Coach recommendations
-        if not display_df.empty or not combined_recent.empty:
-            st.markdown("---")
-            st.subheader("🎯 Clarity Coach Recommendations")
-
-            with st.spinner("Analyzing with Clarity Coach..."):
-                resp = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months. "
-                                "You are trained in elite human psychology, decision coaching, and behavior design. "
-                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life. "
-                                "You cut through distractions, doubts, or emotional spirals quickly. "
-                                "You constantly re-anchor the user to their millionaire goal and identity. "
-                                "You help the user break big goals into daily tactical moves. "
-                                "You ask sharp, smart questions that help the user unlock stuck thinking. "
-                                "You provide weekly reviews and structured mindset coaching. "
-                                "You operate through five key functions: "
-                                "1) Daily Alignment Coach – Define non-negotiables and reset focus. "
-                                "2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions. "
-                                "3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur. "
-                                "4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action. "
-                                "5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections. "
-                                "Whenever helpful, respond using frameworks, checklists, or pointed questions. "
-                                "Avoid comfort or vague encouragement unless explicitly requested. "
-                                "Challenge by default. Clarity over complexity. Forward momentum over overthinking. "
-                                "Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to. "
-                                "Provide specific recommendations and rationale."
-                            )
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                "Here are the current entries I'd like clarity on:\n\n"
-                                + insights_text
-                                + "\n\n"
-                                + recent_text
-                            )
-                        },
-                    ],
-                    temperature=0.2
-                )
-                st.write(resp.choices[0].message.content)
-        else:
-            st.info("No entries to analyze.")
-
-    # Clarity Chat Tab
-    with tabs[2]:
-        st.title("Clarity Chat (AI Coach)")
+                insights_context += f"- {row['Category'].capitalize()}: {row['Insight']}\n"
 
         st.markdown("**💡 Quick Prompts:**")
         col1, col2, col3 = st.columns(3)
 
-        if col1.button("What are the top 3 moves I need to make today?"):
+        def run_clarity_chat(prompt_text):
             with st.spinner("Analyzing..."):
                 resp = client.chat.completions.create(
                     model="gpt-4",
@@ -412,121 +358,31 @@ Additionally, always help the user figure out which items are most important to 
 Provide specific recommendations and rationale.
 """
                         },
-                        {"role": "user", "content": "What are the top 3 moves I need to make today?"}
+                        {
+                            "role": "user",
+                            "content": insights_context + "\n\n" + prompt_text
+                        },
                     ],
                     temperature=0.2
                 )
                 st.write(resp.choices[0].message.content)
+
+        # Quick prompt buttons
+        if col1.button("What are the top 3 moves I need to make today?"):
+            run_clarity_chat("What are the top 3 moves I need to make today?")
 
         if col2.button("I'm stuck—help me refocus fast."):
-            with st.spinner("Analyzing..."):
-                resp = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": """
-You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months.
-You are trained in elite human psychology, decision coaching, and behavior design.
-Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life.
-You cut through distractions, doubts, or emotional spirals quickly.
-You constantly re-anchor the user to their millionaire goal and identity.
-You help the user break big goals into daily tactical moves.
-You ask sharp, smart questions that help the user unlock stuck thinking.
-You provide weekly reviews and structured mindset coaching.
-You operate through five key functions:
-1) Daily Alignment Coach – Define non-negotiables and reset focus.
-2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions.
-3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur.
-4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action.
-5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections.
-Whenever helpful, respond using frameworks, checklists, or pointed questions.
-Avoid comfort or vague encouragement unless explicitly requested.
-Challenge by default. Clarity over complexity. Forward momentum over overthinking.
-Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to.
-Provide specific recommendations and rationale.
-"""
-                        },
-                        {"role": "user", "content": "I'm stuck—help me refocus fast."}
-                    ],
-                    temperature=0.2
-                )
-                st.write(resp.choices[0].message.content)
+            run_clarity_chat("I'm stuck—help me refocus fast.")
 
         if col3.button("What’s the clearest way to reach my income goal?"):
-            with st.spinner("Analyzing..."):
-                resp = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": """
-You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months.
-You are trained in elite human psychology, decision coaching, and behavior design.
-Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life.
-You cut through distractions, doubts, or emotional spirals quickly.
-You constantly re-anchor the user to their millionaire goal and identity.
-You help the user break big goals into daily tactical moves.
-You ask sharp, smart questions that help the user unlock stuck thinking.
-You provide weekly reviews and structured mindset coaching.
-You operate through five key functions:
-1) Daily Alignment Coach – Define non-negotiables and reset focus.
-2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions.
-3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur.
-4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action.
-5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections.
-Whenever helpful, respond using frameworks, checklists, or pointed questions.
-Avoid comfort or vague encouragement unless explicitly requested.
-Challenge by default. Clarity over complexity. Forward momentum over overthinking.
-Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to.
-Provide specific recommendations and rationale.
-"""
-                        },
-                        {"role": "user", "content": "What’s the clearest way to reach my income goal?"}
-                    ],
-                    temperature=0.2
-                )
-                st.write(resp.choices[0].message.content)
+            run_clarity_chat("What’s the clearest way to reach my income goal?")
 
         st.markdown("---")
         chat = st.text_area("Or ask your own question:")
 
         if st.button("Ask"):
             if chat.strip():
-                with st.spinner("Analyzing..."):
-                    resp = client.chat.completions.create(
-                        model="gpt-4",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": """
-You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months.
-You are trained in elite human psychology, decision coaching, and behavior design.
-Your role is not to motivate, but to drive clarity, execution, and accountability across the user’s business and life.
-You cut through distractions, doubts, or emotional spirals quickly.
-You constantly re-anchor the user to their millionaire goal and identity.
-You help the user break big goals into daily tactical moves.
-You ask sharp, smart questions that help the user unlock stuck thinking.
-You provide weekly reviews and structured mindset coaching.
-You operate through five key functions:
-1) Daily Alignment Coach – Define non-negotiables and reset focus.
-2) Strategic Decision Coach – Compare tradeoffs and eliminate distractions.
-3) Identity Shaping Guide – Reinforce the mindset of a 7-figure entrepreneur.
-4) Obstacle Breakdown Coach – Redirect stuck/frustrated energy to focused action.
-5) Weekly Accountability Partner – Track weekly progress, patterns, and corrections.
-Whenever helpful, respond using frameworks, checklists, or pointed questions.
-Avoid comfort or vague encouragement unless explicitly requested.
-Challenge by default. Clarity over complexity. Forward momentum over overthinking.
-Additionally, always help the user figure out which items are most important to focus on, which to delegate, which to hold off on, and which to say no to.
-Provide specific recommendations and rationale.
-"""
-                            },
-                            {"role": "user", "content": chat},
-                        ],
-                        temperature=0.2
-                    )
-                    st.write(resp.choices[0].message.content)
-
+                run_clarity_chat(chat)
 
 
 

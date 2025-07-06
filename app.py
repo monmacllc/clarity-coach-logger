@@ -148,12 +148,11 @@ def render_category_form(category, clarity_debug):
             input_text = st.text_area(f"Insight for {category}", height=100)
             submitted = st.form_submit_button(f"Log {category}")
             if submitted and input_text.strip():
-                # processing logic...
-                st.success(f"Logged {len(lines)} insight(s)")
-                global sheet, df
-                sheet, df = load_sheet_data()
-                st.experimental_rerun()
-
+                lines = [
+                    s.strip()
+                    for chunk in input_text.splitlines()
+                    for s in chunk.split(",")
+                    if s.strip()
                 ]
                 for line in lines:
                     start, end, _ = extract_event_info(line)
@@ -180,7 +179,8 @@ def render_category_form(category, clarity_debug):
                 st.success(f"Logged {len(lines)} insight(s)")
                 global sheet, df
                 sheet, df = load_sheet_data()
-                time.sleep(2)
+                st.experimental_rerun()
+
 
 # Main tabs
 if openai_ok and sheet_ok:

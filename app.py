@@ -454,3 +454,46 @@ if openai_ok and sheet_ok:
                 ).encode(text="label_text:N")
                 chart = (bars + text_inside + text_above).properties(height=400)
                 st.altair_chart(chart, use_container_width=True)
+
+                # Completed Entries Pie + Bar charts
+                with st.expander("🥧 Completed Entries by Category (Last 30 Days)"):
+                    cutoff_date = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
+                    completed_30 = df[
+                        (df["Status"] == "Complete") & (df["CreatedAt"] >= cutoff_date)
+                    ]
+
+                    counts = (
+                        completed_30.groupby("Category")
+                        .size()
+                        .reset_index(name="CompletedCount")
+                    )
+
+                    all_cats_df = pd.DataFrame({"Category": categories_order})
+                    merged_counts = pd.merge(
+                        all_cats_df,
+                        counts,
+                        on="Category",
+                        how="left"
+                    ).fillna(0)
+                    merged_counts["CompletedCount"] = merged_counts["CompletedCount"].astype(int)
+
+                    if merged_counts["CompletedCount"].sum() == 0:
+                        st.info("No completed entries in the past 30 days.")
+                    else:
+                        pie = alt.Chart(merged_counts).mark_arc(innerRadius=40).encode(
+                            theta=alt.Theta("CompletedCount:Q"),
+                            color=alt.Color("Category:N", sort=categories_order),
+                            tooltip=["Category", "CompletedCount"]
+                        ).properties(height=400)
+                        st.altair_chart(pie, use_container_width=True)
+
+                        bar = alt.Chart(merged_counts).mark_bar().encode(
+                            x=alt.X("CompletedCount:Q", title="Completed Entries"),
+                            y=alt.Y("Category:N", sort="-x"),
+                            tooltip=["Category", "CompletedCount"]
+                        ).properties(height=400, title="Completed Entries per Category")
+                        st.altair_chart(bar, use_container_width=True)
+
+        except Exception as e:
+            st.error("⚠️ An error occurred while rendering the Insights Dashboard.")
+            st.exception(e)

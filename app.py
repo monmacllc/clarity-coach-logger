@@ -185,8 +185,9 @@ def render_category_form(category, clarity_debug):
                 st.success(f"Logged {len(lines)} insight(s)")
                 global sheet, df
                 sheet, df = load_sheet_data()
-                # Clear the input after logging
-                st.session_state[f"input_{category}"] = ""
+                # Clear the input safely if it exists
+                if f"input_{category}" in st.session_state:
+                    st.session_state[f"input_{category}"] = ""
 
     # Outside the form block
     if st.session_state.get("rerun_needed"):

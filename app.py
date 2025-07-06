@@ -12,7 +12,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import logging
 import time
-import altair as alt
 
 # Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
@@ -28,7 +27,7 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Categories (normalized)
+# Categories
 CATEGORIES = [
     "ccv",
     "traditional real estate",
@@ -46,11 +45,7 @@ CATEGORIES = [
     "misc",
 ]
 
-# Initialize timestamp for filtering new entries
-if "initial_load_timestamp" not in st.session_state:
-    st.session_state["initial_load_timestamp"] = datetime.utcnow()
-
-# Date parsing function
+# Date parsing
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
@@ -81,54 +76,25 @@ except Exception as e:
     st.error("OpenAI error")
     st.exception(e)
 
-# Load Google Sheets data
+# Load Google Sheets
 def load_sheet_data():
     sheet_ref = gs_client.open("Clarity Capture Log").sheet1
     values = sheet_ref.get_all_values()
     header = [h.strip() for h in values[0]]
-
-    required_columns = ["CreatedAt", "Status", "Priority", "Device", "RowIndex"]
-    for col in required_columns:
-        if col not in header:
-            header.append(col)
-            sheet_ref.resize(rows=len(values), cols=len(header))
-
     data = []
     for row in values[1:]:
         padded_row = row + [""] * (len(header) - len(row))
         record = dict(zip(header, padded_row))
         data.append(record)
-
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
-
-    def parse_timestamp(value):
-        try:
-            if pd.isnull(value):
-                return pd.NaT
-            if isinstance(value, (float, int)):
-                return pd.to_datetime("1899-12-30") + pd.to_timedelta(value, unit="D")
-            return pd.to_datetime(value, utc=True, errors="coerce")
-        except:
-            return pd.NaT
-
-    df["Timestamp"] = pd.to_numeric(df["Timestamp"], errors="ignore")
-    df["Timestamp"] = df["Timestamp"].apply(parse_timestamp)
-
     df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-    df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
-
-    df = df.dropna(subset=["CreatedAt"])
-
-    df["RowIndex"] = pd.to_numeric(df["RowIndex"], errors="coerce")
-
     df["Category"] = df["Category"].astype(str).str.lower().str.strip()
     df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
     df["Priority"] = df.get("Priority", "").astype(str).str.strip()
-    df["Device"] = df.get("Device", "").astype(str).str.strip()
     return sheet_ref, df
 
-# Connect to Google Sheets
+# Connect Sheets
 try:
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -145,8 +111,8 @@ except Exception as e:
     st.error("Google Sheets error")
     st.exception(e)
 
-# Log form per category
-def render_category_form(category, clarity_debug):
+# Log form
+def render_category_form(category):
     with st.expander(category.upper()):
         with st.form(f"{category}_form"):
             input_text = st.text_area(f"Insight for {category}", height=100)
@@ -164,7 +130,7 @@ def render_category_form(category, clarity_debug):
                     entry = {
                         "timestamp": start,
                         "created_at": created_at,
-                        "category": category.lower().strip(),
+                        "category": category,
                         "insight": line,
                         "action_step": "",
                         "source": "Clarity Coach",
@@ -172,64 +138,31 @@ def render_category_form(category, clarity_debug):
                         "priority": "",
                         "device": "Web",
                     }
-
-                    if clarity_debug:
-                        st.write("🚨 Payload sent to webhook:")
-                        st.json(entry)
-
-                    try:
-                        requests.post(webhook_url, json=entry)
-                    except Exception as e:
-                        logging.warning(e)
-
-                    cal_payload = {
+                    requests.post(webhook_url, json=entry)
+                    requests.post(calendar_webhook_url, json={
                         "start": start,
                         "end": end,
                         "summary": line,
-                        "category": category.lower().strip(),
+                        "category": category,
                         "source": "Clarity Coach",
-                    }
-                    try:
-                        requests.post(calendar_webhook_url, json=cal_payload)
-                    except Exception as e:
-                        logging.warning(e)
-
+                    })
                 st.success(f"Logged {len(lines)} insight(s)")
                 time.sleep(2)
-                global sheet, df
-                sheet, df = load_sheet_data()
 
-# Main tabs
+# Tabs
 if openai_ok and sheet_ok:
     tabs = st.tabs([
         "Clarity Log",
         "Recall Insights",
-        "Clarity Chat",
-        "Insights Dashboard"
     ])
 
-    # Clarity Log Tab
+    # Clarity Log - Input only
     with tabs[0]:
         st.title("Clarity Coach")
-        clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
-
-        # Filter DataFrame to exclude entries logged after app started
-        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-        df_clarity_log = df[
-            df["CreatedAt"] <= pd.Timestamp(st.session_state["initial_load_timestamp"], tz=pytz.UTC)
-        ]
-
         for category in CATEGORIES:
-            render_category_form(category, clarity_debug)
+            render_category_form(category)
 
-            # Show existing entries under this category (only those before app started)
-            cat_df = df_clarity_log[df_clarity_log["Category"] == category.lower().strip()]
-            if not cat_df.empty:
-                st.write(f"**Existing entries for {category.capitalize()}:**")
-                for idx, row in cat_df.iterrows():
-                    st.markdown(f"- {row['Insight']}")
-
-    # Recall Insights Tab
+    # Recall Insights - Shows everything
     with tabs[1]:
         st.title("Recall Insights")
         selected = st.multiselect(
@@ -238,91 +171,27 @@ if openai_ok and sheet_ok:
             default=[c.upper() for c in CATEGORIES]
         )
         selected_keys = [c.lower().strip() for c in selected]
-
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", False)
-        show_timestamps = st.sidebar.checkbox("Show Timestamps", False)
         show_starred = st.sidebar.checkbox("Show Starred Entries Only", False)
-        debug_mode = st.sidebar.checkbox("Recall Insight Debug Mode", False)
 
-        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
-        df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
-
-        cutoff_14 = pd.Timestamp.utcnow() - pd.Timedelta(days=14)
-        df_recall = df[
-            ~(
-                (df["Status"] == "Complete") &
-                (df["CreatedAt"] < cutoff_14)
-            )
+        filtered_df = df[
+            df["Category"].isin(selected_keys)
         ]
-
-        sorted_df = df_recall.sort_values(by="RowIndex", ascending=False).copy()
-        filtered_df = sorted_df[
-            sorted_df["Category"].isin(selected_keys)
-        ]
-
         if not show_completed:
             filtered_df = filtered_df[filtered_df["Status"] != "Complete"]
-
         if show_starred:
             filtered_df = filtered_df[filtered_df["Priority"].str.lower() == "yes"]
 
-        display_df = filtered_df.head(num_entries)
-
-        if debug_mode:
-            st.subheader("🚨 Debug Data")
-            st.dataframe(display_df)
+        display_df = filtered_df.sort_values(by="CreatedAt", ascending=False).head(num_entries)
 
         for category in CATEGORIES:
-            cat_df = display_df[
-                display_df["Category"] == category.lower().strip()
-            ]
-
+            cat_df = display_df[display_df["Category"] == category]
             if cat_df.empty:
                 continue
-
             st.subheader(category.upper())
-
             for idx, row in cat_df.iterrows():
-                created_at_str = (
-                    row["CreatedAt"].astimezone(local_tz).strftime("%Y-%m-%d %I:%M %p %Z")
-                    if pd.notnull(row["CreatedAt"])
-                    else "No Log Time"
-                )
-
-                label_text = row["Insight"]
-
-                col1, col2 = st.columns([0.85, 0.15])
-
-                with col1:
-                    marked = st.checkbox(
-                        label_text,
-                        key=f"check_{idx}",
-                        value=row["Status"] == "Complete",
-                    )
-                    if show_timestamps:
-                        st.markdown(f"**Logged:** {created_at_str}")
-
-                with col2:
-                    starred = st.checkbox(
-                        "⭐",
-                        value=row["Priority"].lower() == "yes",
-                        key=f"star_{idx}"
-                    )
-
-                if marked and row["Status"] != "Complete":
-                    row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                    sheet.update_cell(row_index, df.columns.get_loc("Status") + 1, "Complete")
-                    st.success("Marked as complete")
-
-                if starred and row["Priority"].lower() != "yes":
-                    row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                    sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "Yes")
-                    st.info("Starred")
-                elif not starred and row["Priority"].lower() == "yes":
-                    row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
-                    sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
-                    st.info("Unstarred")
+                st.markdown(f"- {row['Insight']} ({row['Status']})")
 
             # Clarity Chat Tab
     with tabs[2]:

@@ -28,6 +28,28 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
+# Categories (normalized lowercase keys)
+CATEGORIES = [
+    "ccv",
+    "traditional real estate",
+    "n&ytg",
+    "stressors",
+    "co living",
+    "finances",
+    "body mind spirit",
+    "wife",
+    "kids",
+    "family",
+    "quality of life",
+    "fun",
+    "giving back",
+    "misc",
+]
+
+# Initialize session state for hiding forms after log
+if "logged_categories" not in st.session_state:
+    st.session_state["logged_categories"] = set()
+
 # Date parsing function
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
@@ -123,51 +145,12 @@ except Exception as e:
     st.error("Google Sheets error")
     st.exception(e)
 
-# Category keys and display names
-CATEGORY_KEYS = [
-    "ccv",
-    "traditional real estate",
-    "n&ytg",
-    "stressors",
-    "co living",
-    "finances",
-    "body mind spirit",
-    "wife",
-    "kids",
-    "family",
-    "quality of life",
-    "fun",
-    "giving back",
-    "misc",
-]
-
-CATEGORY_DISPLAY = {
-    "ccv": "CCV",
-    "traditional real estate": "Traditional Real Estate",
-    "n&ytg": "N&YTG",
-    "stressors": "Stressors",
-    "co living": "Co Living",
-    "finances": "Finances",
-    "body mind spirit": "Body Mind Spirit",
-    "wife": "Wife",
-    "kids": "Kids",
-    "family": "Family",
-    "quality of life": "Quality of Life",
-    "fun": "Fun",
-    "giving back": "Giving Back",
-    "misc": "Misc",
-}
-
-# Initialize session state
-if "logged_categories" not in st.session_state:
-    st.session_state["logged_categories"] = set()
-
 # Log form per category
-def render_category_form(category_key, display_name, clarity_debug):
-    with st.expander(display_name):
-        with st.form(key=f"form_{category_key}"):
-            input_text = st.text_area(f"Insight for {display_name}", height=100)
-            submitted = st.form_submit_button(f"Log {display_name}")
+def render_category_form(category, clarity_debug):
+    with st.expander(category.upper()):
+        with st.form(key=f"form_{category}"):
+            input_text = st.text_area(f"Insight for {category}", height=100)
+            submitted = st.form_submit_button(f"Log {category}")
             if submitted and input_text.strip():
                 lines = [
                     s.strip()
@@ -176,12 +159,12 @@ def render_category_form(category_key, display_name, clarity_debug):
                     if s.strip()
                 ]
                 for line in lines:
-                    start, end, recurrence = extract_event_info(line)
+                    start, end, _ = extract_event_info(line)
                     created_at = datetime.utcnow().isoformat(timespec="microseconds")
                     entry = {
                         "timestamp": start,
                         "created_at": created_at,
-                        "category": category_key,
+                        "category": category.lower().strip(),
                         "insight": line,
                         "action_step": "",
                         "source": "Clarity Coach",
@@ -198,11 +181,12 @@ def render_category_form(category_key, display_name, clarity_debug):
                         requests.post(webhook_url, json=entry)
                     except Exception as e:
                         logging.warning(e)
+
                     cal_payload = {
                         "start": start,
                         "end": end,
                         "summary": line,
-                        "category": category_key,
+                        "category": category.lower().strip(),
                         "source": "Clarity Coach",
                     }
                     try:
@@ -214,7 +198,8 @@ def render_category_form(category_key, display_name, clarity_debug):
                 time.sleep(2)
                 global sheet, df
                 sheet, df = load_sheet_data()
-                st.session_state["logged_categories"].add(category_key)
+                # ✅ Mark this category as logged to hide it
+                st.session_state["logged_categories"].add(category.lower().strip())
 
 # Main tabs
 if openai_ok and sheet_ok:
@@ -230,22 +215,23 @@ if openai_ok and sheet_ok:
         st.title("Clarity Coach")
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
 
-        for category_key in CATEGORY_KEYS:
-            if category_key in st.session_state["logged_categories"]:
+        for category in CATEGORIES:
+            # ✅ Hide if logged
+            if category.lower().strip() in st.session_state["logged_categories"]:
                 continue
-            render_category_form(category_key, CATEGORY_DISPLAY[category_key], clarity_debug)
+            render_category_form(category, clarity_debug)
 
     # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
-        selected_display = st.multiselect(
+        selected = st.multiselect(
             "Categories",
-            options=[CATEGORY_DISPLAY[k] for k in CATEGORY_KEYS],
-            default=[CATEGORY_DISPLAY[k] for k in CATEGORY_KEYS]
+            options=[c.upper() for c in CATEGORIES],
+            default=[c.upper() for c in CATEGORIES]
         )
-        selected_keys = [
-            k for k, v in CATEGORY_DISPLAY.items() if v in selected_display
-        ]
+
+        # Convert back to lowercase keys for filtering
+        selected_keys = [c.lower().strip() for c in selected]
 
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", False)
@@ -266,7 +252,7 @@ if openai_ok and sheet_ok:
 
         sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
         filtered_df = sorted_df[
-            sorted_df["Category"].isin([c.lower().strip() for c in selected_keys])
+            sorted_df["Category"].isin(selected_keys)
         ]
 
         if not show_completed:
@@ -281,15 +267,15 @@ if openai_ok and sheet_ok:
             st.subheader("🚨 Debug Data")
             st.dataframe(display_df)
 
-        for category_key in CATEGORY_KEYS:
+        for category in CATEGORIES:
             cat_df = display_df[
-                display_df["Category"] == category_key
+                display_df["Category"] == category.lower().strip()
             ]
 
             if cat_df.empty:
                 continue
 
-            st.subheader(CATEGORY_DISPLAY[category_key])
+            st.subheader(category.upper())
 
             for idx, row in cat_df.iterrows():
                 created_at_str = (

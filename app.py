@@ -147,7 +147,11 @@ except Exception as e:
 def render_category_form(category, clarity_debug):
     with st.expander(category.upper()):
         with st.form(f"{category}_form"):
-            input_text = st.text_area(f"Insight for {category}", height=100)
+            input_text = st.text_area(
+                f"Insight for {category}",
+                height=100,
+                key=f"input_{category}"
+            )
             submitted = st.form_submit_button(f"Log {category}")
             if submitted and input_text.strip():
                 lines = [
@@ -181,7 +185,8 @@ def render_category_form(category, clarity_debug):
                 st.success(f"Logged {len(lines)} insight(s)")
                 global sheet, df
                 sheet, df = load_sheet_data()
-                st.session_state["rerun_needed"] = True
+                # Clear the input after logging
+                st.session_state[f"input_{category}"] = ""
 
     # Outside the form block
     if st.session_state.get("rerun_needed"):

@@ -28,7 +28,7 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Categories (lowercase keys)
+# Categories (normalized)
 CATEGORIES = [
     "ccv",
     "traditional real estate",
@@ -46,9 +46,9 @@ CATEGORIES = [
     "misc",
 ]
 
-# Initialize session state for hiding forms (if desired)
-if "logged_categories" not in st.session_state:
-    st.session_state["logged_categories"] = set()
+# Initialize timestamp for filtering new entries
+if "initial_load_timestamp" not in st.session_state:
+    st.session_state["initial_load_timestamp"] = datetime.utcnow()
 
 # Date parsing function
 def extract_event_info(text):
@@ -148,8 +148,7 @@ except Exception as e:
 # Log form per category
 def render_category_form(category, clarity_debug):
     with st.expander(category.upper()):
-        # ✅ IMPORTANT: Do not persist any value to text_area
-        with st.form(key=f"form_{category}"):
+        with st.form(f"{category}_form"):
             input_text = st.text_area(f"Insight for {category}", height=100)
             submitted = st.form_submit_button(f"Log {category}")
             if submitted and input_text.strip():
@@ -199,8 +198,6 @@ def render_category_form(category, clarity_debug):
                 time.sleep(2)
                 global sheet, df
                 sheet, df = load_sheet_data()
-                # No need to mark category as hidden — form remains
-                # Text area resets automatically
 
 # Main tabs
 if openai_ok and sheet_ok:
@@ -216,9 +213,21 @@ if openai_ok and sheet_ok:
         st.title("Clarity Coach")
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
 
-        # ✅ Always render all categories, forms stay visible
+        # Filter DataFrame to exclude entries logged after app started
+        df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
+        df_clarity_log = df[
+            df["CreatedAt"] <= pd.Timestamp(st.session_state["initial_load_timestamp"], tz=pytz.UTC)
+        ]
+
         for category in CATEGORIES:
             render_category_form(category, clarity_debug)
+
+            # Show existing entries under this category (only those before app started)
+            cat_df = df_clarity_log[df_clarity_log["Category"] == category.lower().strip()]
+            if not cat_df.empty:
+                st.write(f"**Existing entries for {category.capitalize()}:**")
+                for idx, row in cat_df.iterrows():
+                    st.markdown(f"- {row['Insight']}")
 
     # Recall Insights Tab
     with tabs[1]:
@@ -228,7 +237,6 @@ if openai_ok and sheet_ok:
             options=[c.upper() for c in CATEGORIES],
             default=[c.upper() for c in CATEGORIES]
         )
-
         selected_keys = [c.lower().strip() for c in selected]
 
         num_entries = st.slider("Entries to display", 5, 200, 50)
@@ -241,14 +249,14 @@ if openai_ok and sheet_ok:
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
         cutoff_14 = pd.Timestamp.utcnow() - pd.Timedelta(days=14)
-        df = df[
+        df_recall = df[
             ~(
                 (df["Status"] == "Complete") &
                 (df["CreatedAt"] < cutoff_14)
             )
         ]
 
-        sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
+        sorted_df = df_recall.sort_values(by="RowIndex", ascending=False).copy()
         filtered_df = sorted_df[
             sorted_df["Category"].isin(selected_keys)
         ]

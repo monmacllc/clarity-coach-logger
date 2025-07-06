@@ -185,12 +185,13 @@ def render_category_form(category, clarity_debug):
                     })
                 st.success(f"Logged {len(lines)} insight(s)")
 
-                # ✅ Force re-fetch Google Sheets data immediately
+                # Re-fetch Google Sheets data so Recall Insights updates
                 global sheet, df
                 sheet, df = load_sheet_data()
 
-                # ✅ No session_state manipulation, no keys on text_area
-                time.sleep(2)
+                # ✅ Force rerun to clear the form
+                st.experimental_rerun()
+
 
 # Main tabs
 if openai_ok and sheet_ok:

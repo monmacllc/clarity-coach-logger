@@ -123,12 +123,51 @@ except Exception as e:
     st.error("Google Sheets error")
     st.exception(e)
 
+# Category keys and display names
+CATEGORY_KEYS = [
+    "ccv",
+    "traditional real estate",
+    "n&ytg",
+    "stressors",
+    "co living",
+    "finances",
+    "body mind spirit",
+    "wife",
+    "kids",
+    "family",
+    "quality of life",
+    "fun",
+    "giving back",
+    "misc",
+]
+
+CATEGORY_DISPLAY = {
+    "ccv": "CCV",
+    "traditional real estate": "Traditional Real Estate",
+    "n&ytg": "N&YTG",
+    "stressors": "Stressors",
+    "co living": "Co Living",
+    "finances": "Finances",
+    "body mind spirit": "Body Mind Spirit",
+    "wife": "Wife",
+    "kids": "Kids",
+    "family": "Family",
+    "quality of life": "Quality of Life",
+    "fun": "Fun",
+    "giving back": "Giving Back",
+    "misc": "Misc",
+}
+
+# Initialize session state
+if "logged_categories" not in st.session_state:
+    st.session_state["logged_categories"] = set()
+
 # Log form per category
-def render_category_form(category, clarity_debug):
-    with st.expander(category.upper()):
-        with st.form(key=f"form_{category}"):
-            input_text = st.text_area(f"Insight for {category}", height=100)
-            submitted = st.form_submit_button(f"Log {category}")
+def render_category_form(category_key, display_name, clarity_debug):
+    with st.expander(display_name):
+        with st.form(key=f"form_{category_key}"):
+            input_text = st.text_area(f"Insight for {display_name}", height=100)
+            submitted = st.form_submit_button(f"Log {display_name}")
             if submitted and input_text.strip():
                 lines = [
                     s.strip()
@@ -142,7 +181,7 @@ def render_category_form(category, clarity_debug):
                     entry = {
                         "timestamp": start,
                         "created_at": created_at,
-                        "category": category.lower().strip(),
+                        "category": category_key,
                         "insight": line,
                         "action_step": "",
                         "source": "Clarity Coach",
@@ -163,7 +202,7 @@ def render_category_form(category, clarity_debug):
                         "start": start,
                         "end": end,
                         "summary": line,
-                        "category": category.lower().strip(),
+                        "category": category_key,
                         "source": "Clarity Coach",
                     }
                     try:
@@ -175,15 +214,7 @@ def render_category_form(category, clarity_debug):
                 time.sleep(2)
                 global sheet, df
                 sheet, df = load_sheet_data()
-                # Mark category as logged to hide it
-                st.session_state["logged_categories"].add(category)
-
-                if clarity_debug:
-                    st.write("Latest entries:", df.tail(5))
-
-# Initialize logged_categories in session state
-if "logged_categories" not in st.session_state:
-    st.session_state["logged_categories"] = set()
+                st.session_state["logged_categories"].add(category_key)
 
 # Main tabs
 if openai_ok and sheet_ok:
@@ -198,31 +229,24 @@ if openai_ok and sheet_ok:
     with tabs[0]:
         st.title("Clarity Coach")
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
-        categories = [
-            "ccv",
-            "traditional real estate",
-            "N&YTG",
-            "stressors",
-            "co living",
-            "finances",
-            "body mind spirit",
-            "wife",
-            "kids",
-            "family",
-            "quality of life",
-            "fun",
-            "giving back",
-            "misc",
-        ]
-        for category in categories:
-            if category in st.session_state["logged_categories"]:
+
+        for category_key in CATEGORY_KEYS:
+            if category_key in st.session_state["logged_categories"]:
                 continue
-            render_category_form(category, clarity_debug)
+            render_category_form(category_key, CATEGORY_DISPLAY[category_key], clarity_debug)
 
     # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
-        selected = st.multiselect("Categories", options=categories, default=categories)
+        selected_display = st.multiselect(
+            "Categories",
+            options=[CATEGORY_DISPLAY[k] for k in CATEGORY_KEYS],
+            default=[CATEGORY_DISPLAY[k] for k in CATEGORY_KEYS]
+        )
+        selected_keys = [
+            k for k, v in CATEGORY_DISPLAY.items() if v in selected_display
+        ]
+
         num_entries = st.slider("Entries to display", 5, 200, 50)
         show_completed = st.sidebar.checkbox("Show Completed", False)
         show_timestamps = st.sidebar.checkbox("Show Timestamps", False)
@@ -242,7 +266,7 @@ if openai_ok and sheet_ok:
 
         sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
         filtered_df = sorted_df[
-            sorted_df["Category"].isin([c.lower().strip() for c in selected])
+            sorted_df["Category"].isin([c.lower().strip() for c in selected_keys])
         ]
 
         if not show_completed:
@@ -257,16 +281,15 @@ if openai_ok and sheet_ok:
             st.subheader("🚨 Debug Data")
             st.dataframe(display_df)
 
-        for category in categories:
-            cat_lower = category.lower().strip()
+        for category_key in CATEGORY_KEYS:
             cat_df = display_df[
-                display_df["Category"] == cat_lower
+                display_df["Category"] == category_key
             ]
 
             if cat_df.empty:
                 continue
 
-            st.subheader(category.capitalize())
+            st.subheader(CATEGORY_DISPLAY[category_key])
 
             for idx, row in cat_df.iterrows():
                 created_at_str = (
@@ -274,6 +297,7 @@ if openai_ok and sheet_ok:
                     if pd.notnull(row["CreatedAt"])
                     else "No Log Time"
                 )
+
                 label_text = row["Insight"]
 
                 col1, col2 = st.columns([0.85, 0.15])

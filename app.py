@@ -184,6 +184,12 @@ def render_category_form(category, clarity_debug):
                         "source": "Clarity Coach",
                     })
                 st.success(f"Logged {len(lines)} insight(s)")
+
+                # ✅ Force re-fetch Google Sheets data immediately
+                global sheet, df
+                sheet, df = load_sheet_data()
+
+                # ✅ No session_state manipulation, no keys on text_area
                 time.sleep(2)
 
 # Main tabs

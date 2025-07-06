@@ -149,6 +149,9 @@ except Exception as e:
 def render_category_form(category, clarity_debug):
     input_key = f"input_{category}"
 
+    def clear_input():
+        st.session_state[input_key] = ""
+
     with st.expander(category.upper()):
         with st.form(f"{category}_form"):
             input_text = st.text_area(
@@ -156,7 +159,10 @@ def render_category_form(category, clarity_debug):
                 height=100,
                 key=input_key
             )
-            submitted = st.form_submit_button(f"Log {category}")
+            submitted = st.form_submit_button(
+                f"Log {category}",
+                on_click=clear_input
+            )
 
             if submitted and input_text.strip():
                 lines = [
@@ -188,16 +194,7 @@ def render_category_form(category, clarity_debug):
                         "source": "Clarity Coach",
                     })
                 st.success(f"Logged {len(lines)} insight(s)")
-                global sheet, df
-                sheet, df = load_sheet_data()
-                st.session_state["trigger_rerun"] = True
-
-    # Safe rerun outside the form
-    if st.session_state.get("trigger_rerun"):
-        st.session_state.pop("trigger_rerun")
-        st.experimental_rerun()
-
-                    
+                   
 # Main tabs
 if openai_ok and sheet_ok:
     tabs = st.tabs([

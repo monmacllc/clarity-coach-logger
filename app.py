@@ -28,7 +28,7 @@ calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Categories (normalized lowercase keys)
+# Categories (lowercase keys)
 CATEGORIES = [
     "ccv",
     "traditional real estate",
@@ -46,7 +46,7 @@ CATEGORIES = [
     "misc",
 ]
 
-# Initialize session state for hiding forms after log
+# Initialize session state for hiding forms (if desired)
 if "logged_categories" not in st.session_state:
     st.session_state["logged_categories"] = set()
 
@@ -148,6 +148,7 @@ except Exception as e:
 # Log form per category
 def render_category_form(category, clarity_debug):
     with st.expander(category.upper()):
+        # ✅ IMPORTANT: Do not persist any value to text_area
         with st.form(key=f"form_{category}"):
             input_text = st.text_area(f"Insight for {category}", height=100)
             submitted = st.form_submit_button(f"Log {category}")
@@ -198,8 +199,8 @@ def render_category_form(category, clarity_debug):
                 time.sleep(2)
                 global sheet, df
                 sheet, df = load_sheet_data()
-                # ✅ Mark this category as logged to hide it
-                st.session_state["logged_categories"].add(category.lower().strip())
+                # No need to mark category as hidden — form remains
+                # Text area resets automatically
 
 # Main tabs
 if openai_ok and sheet_ok:
@@ -215,10 +216,8 @@ if openai_ok and sheet_ok:
         st.title("Clarity Coach")
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
 
+        # ✅ Always render all categories, forms stay visible
         for category in CATEGORIES:
-            # ✅ Hide if logged
-            if category.lower().strip() in st.session_state["logged_categories"]:
-                continue
             render_category_form(category, clarity_debug)
 
     # Recall Insights Tab
@@ -230,7 +229,6 @@ if openai_ok and sheet_ok:
             default=[c.upper() for c in CATEGORIES]
         )
 
-        # Convert back to lowercase keys for filtering
         selected_keys = [c.lower().strip() for c in selected]
 
         num_entries = st.slider("Entries to display", 5, 200, 50)

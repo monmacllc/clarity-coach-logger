@@ -323,13 +323,14 @@ Challenge by default. Clarity over complexity. Forward momentum over overthinkin
             if chat.strip():
                 run_clarity_chat(chat)
 
-    # ----------------------
+      # ----------------------
     # Insights Dashboard Tab
     # ----------------------
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
-                    st.markdown("### Entries by Timeframe")
+        try:
+            st.markdown("### Entries by Timeframe")
 
             df_filtered = df.copy()
             df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(
@@ -425,9 +426,7 @@ Challenge by default. Clarity over complexity. Forward momentum over overthinkin
                 chart = (bars + text_inside + text_above).properties(height=400)
                 st.altair_chart(chart, use_container_width=True)
 
-            # -----------------------
             # Completed entries by category
-            # -----------------------
             with st.expander("🥧 Completed Entries by Category (Last 30 Days)"):
                 cutoff_date = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
                 completed_30 = df[

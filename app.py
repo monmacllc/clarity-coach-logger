@@ -145,14 +145,22 @@ except Exception as e:
 
 # Log form per category
 def render_category_form(category, clarity_debug):
+    input_key = f"input_{category}"
+
     with st.expander(category.upper()):
         with st.form(f"{category}_form"):
             input_text = st.text_area(
                 f"Insight for {category}",
                 height=100,
-                key=f"input_{category}"
+                key=input_key
             )
-            submitted = st.form_submit_button(f"Log {category}")
+
+            submitted = st.form_submit_button(
+                f"Log {category}",
+                on_click=clear_input,
+                kwargs={"key": input_key}
+            )
+
             if submitted and input_text.strip():
                 lines = [
                     s.strip()
@@ -185,9 +193,6 @@ def render_category_form(category, clarity_debug):
                 st.success(f"Logged {len(lines)} insight(s)")
                 global sheet, df
                 sheet, df = load_sheet_data()
-                # Clear the input safely if it exists
-                if f"input_{category}" in st.session_state:
-                    st.session_state[f"input_{category}"] = ""
 
     # Outside the form block
     if st.session_state.get("rerun_needed"):

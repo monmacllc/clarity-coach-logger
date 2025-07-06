@@ -172,11 +172,18 @@ def render_category_form(category, clarity_debug):
                         logging.warning(e)
 
                 st.success(f"Logged {len(lines)} insight(s)")
-                time.sleep(3)
+                time.sleep(2)
                 global sheet, df
                 sheet, df = load_sheet_data()
+                # Mark category as logged to hide it
+                st.session_state["logged_categories"].add(category)
+
                 if clarity_debug:
                     st.write("Latest entries:", df.tail(5))
+
+# Initialize logged_categories in session state
+if "logged_categories" not in st.session_state:
+    st.session_state["logged_categories"] = set()
 
 # Main tabs
 if openai_ok and sheet_ok:
@@ -194,6 +201,7 @@ if openai_ok and sheet_ok:
         categories = [
             "ccv",
             "traditional real estate",
+            "N&YTG",
             "stressors",
             "co living",
             "finances",
@@ -207,9 +215,11 @@ if openai_ok and sheet_ok:
             "misc",
         ]
         for category in categories:
+            if category in st.session_state["logged_categories"]:
+                continue
             render_category_form(category, clarity_debug)
 
-        # Recall Insights Tab
+    # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
         selected = st.multiselect("Categories", options=categories, default=categories)
@@ -222,7 +232,6 @@ if openai_ok and sheet_ok:
         df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
 
-        # Remove completed entries older than 14 days
         cutoff_14 = pd.Timestamp.utcnow() - pd.Timedelta(days=14)
         df = df[
             ~(
@@ -231,7 +240,6 @@ if openai_ok and sheet_ok:
             )
         ]
 
-        # Filter based on user selection
         sorted_df = df.sort_values(by="RowIndex", ascending=False).copy()
         filtered_df = sorted_df[
             sorted_df["Category"].isin([c.lower().strip() for c in selected])
@@ -249,7 +257,6 @@ if openai_ok and sheet_ok:
             st.subheader("🚨 Debug Data")
             st.dataframe(display_df)
 
-        # Show entries grouped by category
         for category in categories:
             cat_lower = category.lower().strip()
             cat_df = display_df[
@@ -267,7 +274,6 @@ if openai_ok and sheet_ok:
                     if pd.notnull(row["CreatedAt"])
                     else "No Log Time"
                 )
-
                 label_text = row["Insight"]
 
                 col1, col2 = st.columns([0.85, 0.15])
@@ -301,7 +307,6 @@ if openai_ok and sheet_ok:
                     row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
                     sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                     st.info("Unstarred")
-
 
             # Clarity Chat Tab
     with tabs[2]:

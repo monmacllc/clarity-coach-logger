@@ -14,8 +14,6 @@ import logging
 import time
 import altair as alt
 
-st.write("✅ Streamlit version:", st.__version__)
-
 # Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
@@ -69,6 +67,10 @@ def extract_event_info(text):
         end.isoformat(timespec="microseconds"),
         None,
     )
+
+# Function to clear text input
+def clear_input(key):
+    st.session_state[key] = ""
 
 # OpenAI connection
 try:
@@ -143,10 +145,9 @@ except Exception as e:
     st.error("Google Sheets error")
     st.exception(e)
 
-# Log form per category
+# Render form
 def render_category_form(category, clarity_debug):
     input_key = f"input_{category}"
-
     with st.expander(category.upper()):
         with st.form(f"{category}_form"):
             input_text = st.text_area(
@@ -154,13 +155,11 @@ def render_category_form(category, clarity_debug):
                 height=100,
                 key=input_key
             )
-
             submitted = st.form_submit_button(
                 f"Log {category}",
                 on_click=clear_input,
                 kwargs={"key": input_key}
             )
-
             if submitted and input_text.strip():
                 lines = [
                     s.strip()
@@ -193,12 +192,6 @@ def render_category_form(category, clarity_debug):
                 st.success(f"Logged {len(lines)} insight(s)")
                 global sheet, df
                 sheet, df = load_sheet_data()
-
-    # Outside the form block
-    if st.session_state.get("rerun_needed"):
-        st.session_state.pop("rerun_needed")
-        st.experimental_rerun()
-
 # Main tabs
 if openai_ok and sheet_ok:
     tabs = st.tabs([
@@ -214,11 +207,11 @@ if openai_ok and sheet_ok:
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
         for category in categories:
             render_category_form(category, clarity_debug)
-        # IMPORTANT: Entries are NOT shown below forms anymore as requested.
 
     # Recall Insights Tab
     with tabs[1]:
         st.title("Recall Insights")
+
         selected = st.multiselect(
             "Categories",
             options=[c.upper() for c in categories],
@@ -311,7 +304,6 @@ if openai_ok and sheet_ok:
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
 
-        # Collect recent context
         cutoff_30 = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
         recent_incomplete = df[
             (df["Status"] != "Complete") &
@@ -343,7 +335,6 @@ if openai_ok and sheet_ok:
                             "content": (
                                 "You are Clarity Coach, a high-performance AI built to help the user become a millionaire in 6 months.\n"
                                 "You are trained in elite human psychology, decision coaching, and behavior design.\n"
-                                "Your role is not to motivate, but to drive clarity, execution, and accountability across the user's business and life.\n"
                                 "Challenge by default. Clarity over complexity. Forward momentum over overthinking."
                             )
                         },
@@ -473,7 +464,7 @@ if openai_ok and sheet_ok:
                 chart = (bars + text_inside + text_above).properties(height=400)
                 st.altair_chart(chart, use_container_width=True)
 
-                # Completed Entries Pie + Bar charts
+                # Completed Entries by Category
                 with st.expander("🥧 Completed Entries by Category (Last 30 Days)"):
                     cutoff_date = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
                     completed_30 = df[

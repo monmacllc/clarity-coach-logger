@@ -13,21 +13,31 @@ import pandas as pd
 import logging
 import altair as alt
 
+# --------------------------
 # Page config
+# --------------------------
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 
+# --------------------------
 # Timezone
+# --------------------------
 local_tz = pytz.timezone("US/Pacific")
 
+# --------------------------
 # API Keys and Webhooks
+# --------------------------
 openai_api_key = os.getenv("OPENAI_API_KEY")
 webhook_url = "https://hook.us2.make.com/lagvg0ooxpjvgcftceuqgllovbbr8h42"
 calendar_webhook_url = "https://hook.us2.make.com/nmd640nukq44ikms638z8w6yavqx1t3f"
 
+# --------------------------
 # Logging
+# --------------------------
 logging.basicConfig(level=logging.INFO)
 
+# --------------------------
 # Categories
+# --------------------------
 categories = [
     "ccv",
     "traditional real estate",
@@ -45,7 +55,9 @@ categories = [
     "misc",
 ]
 
+# --------------------------
 # Date parsing function
+# --------------------------
 def extract_event_info(text):
     settings = {"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": datetime.now(pytz.utc)}
     matches = dateparser.search.search_dates(text, settings=settings)
@@ -66,7 +78,9 @@ def extract_event_info(text):
         None,
     )
 
+# --------------------------
 # OpenAI connection
+# --------------------------
 try:
     client = OpenAI(api_key=openai_api_key)
     client.models.list()
@@ -76,7 +90,9 @@ except Exception as e:
     st.error("OpenAI error")
     st.exception(e)
 
+# --------------------------
 # Load Google Sheets data
+# --------------------------
 def load_sheet_data():
     sheet_ref = gs_client.open("Clarity Capture Log").sheet1
     values = sheet_ref.get_all_values()
@@ -97,7 +113,9 @@ def load_sheet_data():
     df["Priority"] = df.get("Priority", "").astype(str).str.strip()
     return sheet_ref, df
 
+# --------------------------
 # Connect to Google Sheets
+# --------------------------
 try:
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -114,7 +132,9 @@ except Exception as e:
     st.error("Google Sheets error")
     st.exception(e)
 
-# Log form per category
+# --------------------------
+# Render category form
+# --------------------------
 def render_category_form(category):
     with st.expander(category.upper()):
         with st.form(f"{category}_form"):
@@ -151,7 +171,9 @@ def render_category_form(category):
                     })
                 st.success(f"Logged {len(lines)} insight(s)")
 
+# --------------------------
 # Main tabs
+# --------------------------
 if openai_ok and sheet_ok:
     tabs = st.tabs([
         "Clarity Log",
@@ -160,13 +182,17 @@ if openai_ok and sheet_ok:
         "Insights Dashboard"
     ])
 
-    # Clarity Log
+    # ----------------------
+    # Clarity Log Tab
+    # ----------------------
     with tabs[0]:
         st.title("📝 Clarity Log")
         for category in categories:
             render_category_form(category)
 
-    # Recall Insights
+    # ----------------------
+    # Recall Insights Tab
+    # ----------------------
     with tabs[1]:
         st.title("🔍 Recall Insights")
         selected = st.multiselect("Categories", options=categories, default=categories)
@@ -233,7 +259,9 @@ if openai_ok and sheet_ok:
                     sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                     st.info("Unstarred")
 
-    # Clarity Chat
+    # ----------------------
+    # Clarity Chat Tab
+    # ----------------------
     with tabs[2]:
         st.title("💬 Clarity Chat (AI Coach)")
 
@@ -295,12 +323,13 @@ Challenge by default. Clarity over complexity. Forward momentum over overthinkin
             if chat.strip():
                 run_clarity_chat(chat)
 
-    # Insights Dashboard
+    # ----------------------
+    # Insights Dashboard Tab
+    # ----------------------
     with tabs[3]:
         st.title("📊 Insights Dashboard")
 
-                try:
-            st.markdown("### Entries by Timeframe")
+                    st.markdown("### Entries by Timeframe")
 
             df_filtered = df.copy()
             df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(
@@ -396,7 +425,9 @@ Challenge by default. Clarity over complexity. Forward momentum over overthinkin
                 chart = (bars + text_inside + text_above).properties(height=400)
                 st.altair_chart(chart, use_container_width=True)
 
+            # -----------------------
             # Completed entries by category
+            # -----------------------
             with st.expander("🥧 Completed Entries by Category (Last 30 Days)"):
                 cutoff_date = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
                 completed_30 = df[

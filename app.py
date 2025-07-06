@@ -55,7 +55,91 @@ def extract_event_info(text):
     if not matches:
         return (
             now.isoformat(timespec="microseconds"),
-            (now + timedelta(hour
+            (now + timedelta(hours=1)).isoformat(timespec="microseconds"),
+            None,
+        )
+    start = matches[0][1]
+    if start.year < 1900 or start.year > 2100:
+        start = now
+    end = start + timedelta(hours=1)
+    return (
+        start.isoformat(timespec="microseconds"),
+        end.isoformat(timespec="microseconds"),
+        None,
+    )
+
+# OpenAI connection
+try:
+    client = OpenAI(api_key=openai_api_key)
+    client.models.list()
+    openai_ok = True
+except Exception as e:
+    openai_ok = False
+    st.error("OpenAI error")
+    st.exception(e)
+
+# Load Google Sheets data
+def load_sheet_data():
+    sheet_ref = gs_client.open("Clarity Capture Log").sheet1
+    values = sheet_ref.get_all_values()
+    header = [h.strip() for h in values[0]]
+
+    required_columns = ["CreatedAt", "Status", "Priority", "Device", "RowIndex"]
+    for col in required_columns:
+        if col not in header:
+            header.append(col)
+            sheet_ref.resize(rows=len(values), cols=len(header))
+
+    data = []
+    for row in values[1:]:
+        padded_row = row + [""] * (len(header) - len(row))
+        record = dict(zip(header, padded_row))
+        data.append(record)
+
+    df = pd.DataFrame(data)
+    df.columns = df.columns.str.strip()
+
+    def parse_timestamp(value):
+        try:
+            if pd.isnull(value):
+                return pd.NaT
+            if isinstance(value, (float, int)):
+                return pd.to_datetime("1899-12-30") + pd.to_timedelta(value, unit="D")
+            return pd.to_datetime(value, utc=True, errors="coerce")
+        except:
+            return pd.NaT
+
+    df["Timestamp"] = pd.to_numeric(df["Timestamp"], errors="ignore")
+    df["Timestamp"] = df["Timestamp"].apply(parse_timestamp)
+
+    df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
+    df["CreatedAt"] = df["CreatedAt"].fillna(df["Timestamp"])
+
+    df = df.dropna(subset=["CreatedAt"])
+
+    df["RowIndex"] = pd.to_numeric(df["RowIndex"], errors="coerce")
+    df["Category"] = df["Category"].astype(str).str.lower().str.strip()
+    df["Status"] = df.get("Status", "Incomplete").astype(str).str.strip().str.capitalize()
+    df["Priority"] = df.get("Priority", "").astype(str).str.strip()
+    df["Device"] = df.get("Device", "").astype(str).str.strip()
+    return sheet_ref, df
+
+# Connect to Google Sheets
+try:
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        json.loads(os.getenv("GOOGLE_SERVICE_KEY")), scope
+    )
+    gs_client = gspread.authorize(creds)
+    sheet, df = load_sheet_data()
+    sheet_ok = True
+except Exception as e:
+    sheet_ok = False
+    st.error("Google Sheets error")
+    st.exception(e)
 
 # Log form per category
 def render_category_form(category, clarity_debug):
@@ -106,12 +190,13 @@ if openai_ok and sheet_ok:
         "Insights Dashboard"
     ])
 
-    # Clarity Log Tab (forms only)
+    # Clarity Log Tab
     with tabs[0]:
         st.title("Clarity Coach")
         clarity_debug = st.sidebar.checkbox("Clarity Log Debug Mode", False)
         for category in categories:
             render_category_form(category, clarity_debug)
+        # IMPORTANT: Entries are NOT shown below forms anymore as requested.
 
     # Recall Insights Tab
     with tabs[1]:
@@ -203,11 +288,12 @@ if openai_ok and sheet_ok:
                     row_index = df[df["Insight"] == row["Insight"]].index[0] + 2
                     sheet.update_cell(row_index, df.columns.get_loc("Priority") + 1, "")
                     st.info("Unstarred")
+
     # Clarity Chat Tab
     with tabs[2]:
         st.title("Clarity Chat (AI Coach)")
 
-        # Collect context of incomplete and starred entries
+        # Collect recent context
         cutoff_30 = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
         recent_incomplete = df[
             (df["Status"] != "Complete") &
@@ -272,6 +358,7 @@ if openai_ok and sheet_ok:
         try:
             df["CreatedAt"] = pd.to_datetime(df["CreatedAt"], errors="coerce", utc=True)
             df_filtered = df.copy()
+
             df_filtered["DaysAgo"] = df_filtered["CreatedAt"].apply(
                 lambda d: (pd.Timestamp.utcnow() - d).days
             )
@@ -367,41 +454,3 @@ if openai_ok and sheet_ok:
                 ).encode(text="label_text:N")
                 chart = (bars + text_inside + text_above).properties(height=400)
                 st.altair_chart(chart, use_container_width=True)
-
-            with st.expander("🥧 Completed Entries by Category (Last 30 Days)"):
-                cutoff_date = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
-                completed_30 = df[
-                    (df["Status"] == "Complete") & (df["CreatedAt"] >= cutoff_date)
-                ]
-
-                counts = (
-                    completed_30.groupby("Category")
-                    .size()
-                    .reset_index(name="CompletedCount")
-                )
-
-                all_cats_df = pd.DataFrame({"Category": categories_order})
-                merged_counts = pd.merge(all_cats_df, counts, on="Category", how="left").fillna(0)
-                merged_counts["CompletedCount"] = merged_counts["CompletedCount"].astype(int)
-
-                if merged_counts["CompletedCount"].sum() == 0:
-                    st.info("No completed entries in the past 30 days.")
-                else:
-                    pie = alt.Chart(merged_counts).mark_arc(innerRadius=40).encode(
-                        theta=alt.Theta("CompletedCount:Q"),
-                        color=alt.Color("Category:N", sort=categories_order),
-                        tooltip=["Category", "CompletedCount"]
-                    ).properties(height=400)
-                    st.altair_chart(pie, use_container_width=True)
-
-                    bar = alt.Chart(merged_counts).mark_bar().encode(
-                        x=alt.X("CompletedCount:Q", title="Completed Entries"),
-                        y=alt.Y("Category:N", sort="-x"),
-                        tooltip=["Category", "CompletedCount"]
-                    ).properties(height=400, title="Completed Entries per Category")
-                    st.altair_chart(bar, use_container_width=True)
-
-        except Exception as e:
-            st.error("⚠️ An error occurred while rendering the Insights Dashboard.")
-            st.exception(e)
-                             

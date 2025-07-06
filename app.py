@@ -14,6 +14,8 @@ import logging
 import time
 import altair as alt
 
+st.write("✅ Streamlit version:", st.__version__)
+
 # Page config
 st.set_page_config(page_title="Clarity Coach", layout="centered")
 

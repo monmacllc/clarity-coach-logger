@@ -148,8 +148,13 @@ except Exception as e:
 # Log form per category (only input forms, no display of entries)
 def render_category_form(category, clarity_debug):
     with st.expander(category.upper()):
+        key_name = f"input_{category}"
         with st.form(f"{category}_form"):
-            input_text = st.text_area(f"Insight for {category}", height=100)
+            input_text = st.text_area(
+                f"Insight for {category}",
+                height=100,
+                key=key_name
+            )
             submitted = st.form_submit_button(f"Log {category}")
             if submitted and input_text.strip():
                 lines = [
@@ -181,6 +186,8 @@ def render_category_form(category, clarity_debug):
                         "source": "Clarity Coach",
                     })
                 st.success(f"Logged {len(lines)} insight(s)")
+                # ✅ Force clear text
+                st.session_state[key_name] = ""
                 time.sleep(2)
 
 # Main tabs

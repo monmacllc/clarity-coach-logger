@@ -323,7 +323,7 @@ Challenge by default. Clarity over complexity. Forward momentum over overthinkin
             if chat.strip():
                 run_clarity_chat(chat)
 
-      # ----------------------
+    # ----------------------
     # Insights Dashboard Tab
     # ----------------------
     with tabs[3]:

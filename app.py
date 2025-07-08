@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO)
 # Categories
 # --------------------------
 categories = [
-    "money moves",           # Now first in the list
+    "money moves",           # <-- Now first
     "ccv",
     "traditional real estate",
     "n&ytg",
@@ -323,6 +323,7 @@ Challenge by default. Clarity over complexity. Forward momentum over overthinkin
         if st.button("Ask"):
             if chat.strip():
                 run_clarity_chat(chat)
+
 
     # ----------------------
     # Insights Dashboard Tab

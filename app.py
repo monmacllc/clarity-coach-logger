@@ -39,6 +39,7 @@ logging.basicConfig(level=logging.INFO)
 # Categories
 # --------------------------
 categories = [
+    "money moves",           # Now first in the list
     "ccv",
     "traditional real estate",
     "n&ytg",
